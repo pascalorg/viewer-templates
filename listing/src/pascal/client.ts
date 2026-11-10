@@ -38,17 +38,23 @@ export type RequestOptions = {
   signal?: AbortSignal
   /** Inject a fetch, e.g. a server-side one that adds credentials. Defaults to the global fetch. */
   fetch?: typeof fetch
+  /**
+   * A short-lived viewer token for a private project, minted by your own server from
+   * its Pascal API key (see examples/token-server.mjs). Never an API key.
+   */
+  token?: string
 }
 
 /**
  * Reads a project's published revision: its projected scene graph and its baked
- * 3D file. Anonymous: the browser sends no cookies or credentials, so only public
- * projects are readable here. Never add a Pascal API key to a browser request.
+ * 3D file. Without a token the read is anonymous (public projects only); with a
+ * viewer token it reads the one private project the token was minted for. The
+ * browser never sends cookies, and never a Pascal API key.
  */
 export async function getScene(
   baseUrl: string,
   projectId: string,
-  { signal, fetch: fetchImpl = fetch }: RequestOptions = {},
+  { signal, fetch: fetchImpl = fetch, token }: RequestOptions = {},
 ): Promise<SceneResponse> {
   const url = `${baseUrl.replace(/\/+$/, '')}/api/projects/${encodeURIComponent(projectId)}/scene`
   let response: Response
@@ -56,7 +62,10 @@ export async function getScene(
     response = await fetchImpl(url, {
       signal,
       credentials: 'omit',
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     })
   } catch (error) {
     if (signal?.aborted) throw error
@@ -114,6 +123,7 @@ export async function fetchGlb(
   {
     signal,
     fetch: fetchImpl = fetch,
+    token,
     onProgress,
   }: RequestOptions & { onProgress?: (loaded: number, total: number | null) => void } = {},
 ): Promise<LoadedGlb> {
@@ -122,7 +132,8 @@ export async function fetchGlb(
   let renewed = false
 
   const renew = async () => {
-    current = await getScene(baseUrl, projectId, { signal, fetch: fetchImpl })
+    // A private project's renewal needs the same token as the first read.
+    current = await getScene(baseUrl, projectId, { signal, fetch: fetchImpl, token })
     lod = pickLod(current.bake)
     renewed = true
   }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { fetchViewerToken, PASCAL_TOKEN_URL } from './config'
 import { fetchGlb, getScene, PascalError, type SceneResponse } from './pascal'
 
 export type ListingState =
@@ -30,7 +31,9 @@ export function useListing(baseUrl: string, projectId: string) {
     if (!attempt.quiet) setState({ kind: 'loading' })
 
     const run = async () => {
-      const scene = await getScene(baseUrl, projectId, { signal })
+      // A fresh token each attempt: tokens last an hour at most, and a renewal re-reads.
+      const token = PASCAL_TOKEN_URL ? await fetchViewerToken(projectId, signal) : undefined
+      const scene = await getScene(baseUrl, projectId, { signal, token })
       if (scene.bake.status !== 'ready' || scene.bake.lods.length === 0) {
         setState({ kind: 'no-file', scene })
         if (scene.bake.status === 'baking') {
@@ -41,6 +44,7 @@ export function useListing(baseUrl: string, projectId: string) {
       setState({ kind: 'downloading', scene, progress: null })
       const glb = await fetchGlb(baseUrl, projectId, scene, {
         signal,
+        token,
         onProgress: (loaded, total) =>
           setState({
             kind: 'downloading',
