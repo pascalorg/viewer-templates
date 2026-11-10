@@ -28,3 +28,5 @@ instance (see `.env.example`).
 customisation and the rules to keep (start with: never put a Pascal API key in the browser).
 
 MIT licensed, like the rest of this repository.
+
+Private projects: run `examples/token-server.mjs` with your API key on your server and set `VITE_PASCAL_TOKEN_URL`. See AGENTS.md.

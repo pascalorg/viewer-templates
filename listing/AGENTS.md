@@ -107,6 +107,22 @@ Pascal account. `npm run fixture` regenerates `tests/fixtures/` (needs KTX-Softw
 `TOKTX=/path/to/toktx`); the fixture is a small two-floor house with a KTX2 texture, a door clip and
 meshopt compression, like a real bake.
 
+## Private projects
+
+The read works without a credential for public projects. For a private project, your
+server mints a short-lived viewer token from its Pascal API key and your viewer sends it
+as `Authorization: Bearer <token>`:
+
+1. Run a token endpoint next to your site; `examples/token-server.mjs` is a complete
+   one. It holds `PASCAL_API_KEY`, applies your own login check, and calls
+   `POST /api/projects/{id}/viewer-grants` with `{ origins: [your viewer origin] }`.
+   The key's owner must be able to manage the project.
+2. Set `VITE_PASCAL_TOKEN_URL` to that endpoint. The viewer asks it for a token on
+   every read (tokens last an hour at most) and sends your site's own cookies to it.
+
+A token reads only that project's published version, only from the origins it was
+minted for. Revoking the API key, or its owner losing manage access, stops it.
+
 ## Deploy
 
 `npm run build` writes a static site to `dist/`. There is one page and no client-side routing.

@@ -18,6 +18,9 @@ import { defineConfig, loadEnv, type Plugin } from 'vite'
  */
 function contentSecurityPolicy(env: Record<string, string>): Plugin {
   const apiOrigin = new URL(env.VITE_PASCAL_BASE_URL || 'https://editor.pascal.app').origin
+  const tokenOrigin = env.VITE_PASCAL_TOKEN_URL?.startsWith('http')
+    ? [new URL(env.VITE_PASCAL_TOKEN_URL).origin]
+    : []
   const assetOrigins = (env.VITE_PASCAL_ASSET_ORIGINS || 'https://*.supabase.co')
     .split(/[\s,]+/)
     .filter(Boolean)
@@ -25,7 +28,7 @@ function contentSecurityPolicy(env: Record<string, string>): Plugin {
     "default-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'",
     "worker-src 'self' blob:",
-    `connect-src 'self' ${[apiOrigin, ...assetOrigins].join(' ')}`,
+    `connect-src 'self' ${[apiOrigin, ...tokenOrigin, ...assetOrigins].join(' ')}`,
     `img-src 'self' data: blob: https: ${assetOrigins.join(' ')}`,
     "style-src 'self'",
     "object-src 'none'",
