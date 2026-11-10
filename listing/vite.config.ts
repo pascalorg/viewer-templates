@@ -28,7 +28,9 @@ function contentSecurityPolicy(env: Record<string, string>): Plugin {
     "default-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'",
     "worker-src 'self' blob:",
-    `connect-src 'self' ${[apiOrigin, ...tokenOrigin, ...assetOrigins].join(' ')}`,
+    // The live viewer fetches its default Draco and Basis decoders from these hosts, and
+    // glTF loaders read embedded buffers through data: and blob: URLs.
+    `connect-src 'self' data: blob: https://www.gstatic.com https://cdn.jsdelivr.net ${[apiOrigin, ...tokenOrigin, ...assetOrigins].join(' ')}`,
     `img-src 'self' data: blob: https: ${assetOrigins.join(' ')}`,
     "style-src 'self'",
     "object-src 'none'",

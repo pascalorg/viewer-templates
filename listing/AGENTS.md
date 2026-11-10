@@ -1,9 +1,10 @@
 # Listing viewer template
 
-A standalone web page that shows one published Pascal project in 3D: the baked 3D file (GLB) under
+A standalone web page that shows one published Pascal project in 3D: a baked 3D file (GLB) under
 studio light, a floors control, room names and areas on hover, and doors and windows that open on
-click. It reads Pascal's published scene API, anonymously or with a short-lived viewer credential. It does not use any `@pascal-app/*`
-package, so it is also the reference for building your own viewer on Pascal.
+click. Unbaked projects rebuild live from the published graph. It reads Pascal's published scene
+API, anonymously or with a short-lived viewer credential. The live path uses the public
+`@pascal-app/core`, `@pascal-app/viewer` and `@pascal-app/nodes` packages at `^1.1.0`.
 
 It is a template: fork it, restyle it, add UI. This file tells you (or your agent) where things are
 and which rules to keep.
@@ -13,9 +14,10 @@ and which rules to keep.
 | Path | Owns |
 | --- | --- |
 | `src/pascal/` | The API client: the contract schema (`contract.ts`), `getScene` / `fetchGlb` with typed errors and signed-URL renewal (`client.ts`), read helpers (`graph.ts`), and browser access resolution and PKCE (`access.ts`, `handoff.ts`). No React and no three.js in here; keep it that way so it can move into an SDK unchanged. |
-| `src/useListing.ts` | Loading flow: read the scene, then download the best 3D file, poll while it is being prepared. |
+| `src/useListing.ts` | Loading flow: choose a ready bake or live graph; poll while baking. |
 | `src/App.tsx`, `src/styles.css` | Screens (loading, errors, no 3D file, WebGL unavailable) and the overlay UI. |
 | `src/viewer/Viewer.tsx` | The canvas: environment light, key light and shadow, camera framing, orbit controls. |
+| `src/viewer/LiveViewer.tsx` | Lazy live runtime: render plugin, read-only lease, graph/material hydration, readiness and listing interactions. |
 | `src/viewer/Model.tsx` | Parses the GLB, applies floor visibility, hover and click, plays door and window clips. |
 | `src/viewer/semantics.ts` | Maps GLB nodes to Pascal identities: floors, rooms, openables. |
 | `src/viewer/loaders.ts` | GLTFLoader with the meshopt decoder and KTX2 transcoder Pascal's files need. |
@@ -88,10 +90,19 @@ npm run dev            # http://localhost:5173/?project=<project id>
 | Variable | Meaning |
 | --- | --- |
 | `VITE_PASCAL_BASE_URL` | Pascal instance, default `https://editor.pascal.app`. |
+| `VITE_PASCAL_SOURCE` | `auto` (default): ready bake or live rebuild; `baked`: require a ready bake; `live`: always rebuild. |
 | `VITE_PASCAL_PROJECT_ID` | Project shown when the address has no `?project=`. |
 | `VITE_PASCAL_ASSET_ORIGINS` | Storage hosts added to the CSP `connect-src`, default `https://*.supabase.co`. |
 
 All of them are build-time and public: Vite inlines `VITE_*` values into the bundle.
+
+In auto mode a baking project renders live immediately, polls every 30 seconds, then switches
+to the GLB when ready. Baked mode keeps the no-file/baking screens. Live mode never downloads
+the bake. Both renderers keep the listing overlays. The live runtime is dynamically imported;
+baked visitors do not load viewer/nodes. Register `renderPlugin` from `@pascal-app/nodes/render`
+before loading the graph, hold the core read-only lease until unmount, register `libraryMaterials`,
+and use `Viewer.onSceneReadyChange` for readiness. Relative assets use `VITE_PASCAL_BASE_URL`;
+storage configuration keeps the runtime default. Live uses the fixture's untextured studio setup.
 
 Checks:
 
@@ -106,6 +117,8 @@ The smoke test intercepts the scene read and the GLB download, so it needs no ne
 Pascal account. `npm run fixture` regenerates `tests/fixtures/` (needs KTX-Software's `toktx`, or
 `TOKTX=/path/to/toktx`); the fixture is a small two-floor house with a KTX2 texture, a door clip and
 meshopt compression, like a real bake.
+`live-scene.json` and `cube.gltf` are the standalone live-viewer fixture: the smoke mocks their
+asset reads and checks scene readiness, rendered pixels, and the baking-to-ready transition.
 
 ## Open from Pascal
 
@@ -200,14 +213,17 @@ Cloudflare Pages).
 - Never put a Pascal API key or account session in the browser bundle. `VITE_*` variables and
   everything in `src/` ship to every visitor. Public projects read anonymously; private projects
   use the registered Pascal handoff or your own server's short-lived token endpoint.
-- Do not import `@pascal-app/*`. The template must stay installable from this folder alone.
+- Keep the template installable from this folder using published npm dependencies. Import the
+  Pascal runtime only inside the lazy live path, and use `@pascal-app/nodes/render`, not the
+  editor entry.
 - Keep `src/pascal/` free of React and three.js.
 - Keep the CSP in `vite.config.ts` in step with what the page loads. The decoders need
   `'wasm-unsafe-eval'`, `'unsafe-eval'` (the Basis transcoder's Emscripten bindings build functions
   at runtime inside its worker) and `worker-src blob:`; the reasons are in the file. KTX2 textures
   silently fail without them, and the model never finishes loading.
-- The Basis transcoder is bundled from the installed `three` (no transcoder path is set), so it is
-  served from your own origin and always matches the loader. Do not point it at a CDN.
-- Watch the bundle: the app shell is about 82 KB gzipped and the 3D chunk about 295 KB, loaded in
-  parallel with the API read. The KTX2 transcoder (about 15 KB of JavaScript and 245 KB of
-  WebAssembly, gzipped) loads only when a file has KTX2 textures.
+- The baked path's Basis transcoder is bundled from the installed `three` (no transcoder path is set), so it is
+  served from your own origin and always matches the loader. Live keeps the viewer's default
+  Draco/Basis decoder URLs; the CSP permits their gstatic/jsDelivr fetches.
+- Watch the bundle: shared React/Three/R3F chunks are separate from the app and renderer entries.
+  Live additionally loads the Pascal runtime and lazy node renderers; baked visitors must not
+  fetch them. The baked KTX2 transcoder loads only when a file has KTX2 textures.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchViewerToken, PASCAL_TOKEN_URL } from './config'
+import { fetchViewerToken, PASCAL_SOURCE, PASCAL_TOKEN_URL } from './config'
 import { fetchGlb, getScene, PascalError, type SceneResponse } from './pascal'
 import {
   type Access, credentialReadSucceeded, rejectCredential, renewalDelay, ReopenRequired, resolveAccess,
@@ -12,6 +12,7 @@ export type ListingState =
   | { kind: 'error'; error: PascalError }
   /** The project is readable but its 3D file is not ready (`bake.status` other than ready). */
   | { kind: 'no-file'; scene: SceneResponse }
+  | { kind: 'live'; scene: SceneResponse }
   | { kind: 'downloading'; scene: SceneResponse; progress: number | null }
   | { kind: 'ready'; scene: SceneResponse; bytes: ArrayBuffer }
 
@@ -22,7 +23,7 @@ function asPascalError(error: unknown): PascalError {
   return error instanceof PascalError ? error : new PascalError('http', String(error))
 }
 
-/** Reads the project, then downloads its best 3D file. `reload` starts over. */
+/** Reads the project and chooses its bake or live graph. `reload` starts over. */
 export function useListing(baseUrl: string, projectId: string) {
   const [state, setState] = useState<ListingState>({ kind: 'loading' })
   // A quiet attempt (the baking poll) keeps the current screen instead of flashing a loader.
@@ -60,11 +61,21 @@ export function useListing(baseUrl: string, projectId: string) {
         credentialReadSucceeded(access.credential)
         renewal = setTimeout(() => setAttempt({ quiet: true }), renewalDelay(access.credential))
       }
-      if (scene.bake.status !== 'ready' || scene.bake.lods.length === 0) {
-        setState({ kind: 'no-file', scene })
-        if (scene.bake.status === 'baking') {
-          poll = setTimeout(() => setAttempt({ quiet: true }), BAKING_POLL_MS)
-        }
+      if (scene.bake.status === 'baking' && PASCAL_SOURCE !== 'live') {
+        poll = setTimeout(() => setAttempt({ quiet: true }), BAKING_POLL_MS)
+      }
+      const bakeReady = scene.bake.status === 'ready' && scene.bake.lods.length > 0
+      if (PASCAL_SOURCE === 'live' || !bakeReady) {
+        const kind = PASCAL_SOURCE === 'baked' ? 'no-file' : 'live'
+        // Polls and credential renewals re-read the scene; an unchanged revision keeps the
+        // mounted live scene instead of rebuilding it.
+        setState((current) =>
+          current.kind === kind &&
+          current.scene.project.id === scene.project.id &&
+          current.scene.revision.version === scene.revision.version
+            ? current
+            : { kind, scene },
+        )
         return
       }
       setState({ kind: 'downloading', scene, progress: null })
