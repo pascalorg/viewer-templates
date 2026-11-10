@@ -5,6 +5,12 @@ export const PASCAL_BASE_URL = (
   import.meta.env.VITE_PASCAL_BASE_URL || 'https://editor.pascal.app'
 ).replace(/\/+$/, '')
 
+/** Prefer the bake when available, or rebuild from the published graph. */
+export const PASCAL_SOURCE: 'auto' | 'baked' | 'live' =
+  import.meta.env.VITE_PASCAL_SOURCE === 'baked' || import.meta.env.VITE_PASCAL_SOURCE === 'live'
+    ? import.meta.env.VITE_PASCAL_SOURCE
+    : 'auto'
+
 /**
  * Optional: your own endpoint that returns `{ token }` for `?project=<id>` after your
  * own login check. When set, this takes precedence over the Pascal handoff.

@@ -4,8 +4,9 @@ A small, deployable web page that shows a published [Pascal](https://editor.pasc
 straight from Pascal's public scene read API. Floors you can isolate, room names and areas on
 hover, doors and windows that open on click.
 
-It is a template: a standalone Vite, React and three.js project with no Pascal packages, meant to
-be forked and restyled.
+It is a template: a standalone Vite, React and three.js project, meant to be forked and restyled.
+Ready bakes render as GLB files. Unbaked projects rebuild live from the published scene graph
+using `@pascal-app/core`, `@pascal-app/viewer` and `@pascal-app/nodes` (`^1.1.0`), loaded on demand.
 
 ```bash
 npm install
@@ -15,6 +16,12 @@ npm run dev
 
 The project must be published; direct anonymous links require it to be public. Set `VITE_PASCAL_BASE_URL` to read from another Pascal
 instance (see `.env.example`).
+
+`VITE_PASCAL_SOURCE` selects `auto` (default: ready GLB, otherwise live), `baked` (require a
+ready GLB), or `live` (always rebuild). While baking, auto shows the live scene and checks every
+30 seconds, switching to the GLB when ready. The listing UI stays the same for both sources.
+The live view uses the runtime's untextured studio setup; relative assets resolve against
+`VITE_PASCAL_BASE_URL`.
 
 | Script | Does |
 | --- | --- |

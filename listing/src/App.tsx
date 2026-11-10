@@ -20,6 +20,9 @@ import { hasWebGL2 } from './viewer/webgl'
 // parallel with the API read, so status screens and the poster paint first.
 const loadViewer = () => import('./viewer/Viewer')
 const Viewer = lazy(() => loadViewer().then((module) => ({ default: module.Viewer })))
+const LiveViewer = lazy(() => import('./viewer/LiveViewer').then((module) => ({
+  default: module.LiveViewer,
+})))
 
 export function App() {
   const projectId = useMemo(() => projectIdFromLocation(), [])
@@ -72,20 +75,21 @@ function Listing({ projectId }: { projectId: string }) {
   }
   if (state.kind === 'error') return <ErrorStatus error={state.error} onRetry={reload} />
   if (state.kind === 'no-file') return <NoFileStatus scene={state.scene} onRetry={reload} />
-  return <Scene state={state} onRetry={reload} />
+  return <Scene key={state.kind === 'live' ? 'live' : 'baked'} state={state} onRetry={reload} />
 }
 
 function Scene({
   state,
   onRetry,
 }: {
-  state: Extract<ListingState, { kind: 'downloading' | 'ready' }>
+  state: Extract<ListingState, { kind: 'downloading' | 'ready' | 'live' }>
   onRetry: () => void
 }) {
   const { scene } = state
   const levels = useMemo(() => listLevels(scene.graph), [scene.graph])
   const [levelId, setLevelId] = useState<string | null>(null)
   const [model, setModel] = useState<ModelInfo | null>(null)
+  const [liveReady, setLiveReady] = useState(false)
   const [openError, setOpenError] = useState(false)
   const [hover, setHover] = useState<(RoomHover & { x: number; y: number }) | null>(null)
   const handleError = useCallback((error: unknown) => {
@@ -95,7 +99,7 @@ function Scene({
 
   if (openError) {
     return (
-      <Status title="The 3D file couldn't be opened" state="error">
+      <Status title="The 3D view couldn't be opened" state="error">
         <button className="button" onClick={onRetry} type="button">
           Try again
         </button>
@@ -103,34 +107,55 @@ function Scene({
     )
   }
 
-  const progress = state.kind === 'downloading' ? state.progress : 1
+  const live = state.kind === 'live'
+  const ready = live ? liveReady : !!model
+  const progress = state.kind === 'downloading' ? state.progress : live ? null : 1
+  const hasOpenables = live
+    ? Object.values(scene.graph.nodes).some((node) =>
+        (node.type === 'door' || node.type === 'window') && node.openingKind !== 'opening')
+    : model?.hasOpenables
   return (
-    <main className="app" data-state={model ? 'ready' : 'loading'}>
-      <ProjectHeader scene={scene} />
+    <main
+      className="app"
+      data-scene-ready={ready}
+      data-source={live ? 'live' : 'baked'}
+      data-state={ready ? 'ready' : 'loading'}
+    >
+      <ProjectHeader scene={scene} source={live ? 'Live view' : 'Baked view'} />
 
-      {state.kind === 'ready' ? (
+      {live || state.kind === 'ready' ? (
         <ViewerBoundary onError={handleError}>
           <Suspense fallback={null}>
-            <Viewer
-              bytes={state.bytes}
-              graph={scene.graph}
-              label={`${projectName(scene)}, interactive 3D view`}
-              levelId={levelId}
-              onError={handleError}
-              onHover={setHover}
-              onReady={setModel}
-            />
+            {live ? (
+              <LiveViewer
+                scene={scene}
+                levelId={levelId}
+                onError={handleError}
+                onHover={setHover}
+                onSceneReadyChange={setLiveReady}
+              />
+            ) : state.kind === 'ready' ? (
+              <Viewer
+                bytes={state.bytes}
+                graph={scene.graph}
+                label={`${projectName(scene)}, interactive 3D view`}
+                levelId={levelId}
+                onError={handleError}
+                onHover={setHover}
+                onReady={setModel}
+              />
+            ) : null}
           </Suspense>
         </ViewerBoundary>
       ) : null}
 
-      {model ? null : (
+      {ready ? null : (
         <div className="loading-overlay">
           {scene.project.coverUrl ? (
             <img alt="" className="poster" src={scene.project.coverUrl} />
           ) : null}
           <div className="progress-card" role="status">
-            <span>Loading 3D file…</span>
+            <span>{live ? 'Building 3D view…' : 'Loading 3D file…'}</span>
             <div className="progress-track">
               <div
                 className={progress === null ? 'progress-bar indeterminate' : 'progress-bar'}
@@ -141,7 +166,7 @@ function Scene({
         </div>
       )}
 
-      {model && levels.length > 1 ? (
+      {ready && levels.length > 1 ? (
         <fieldset className="levels">
           <legend className="sr-only">Floors</legend>
           <LevelButton active={levelId === null} onClick={() => setLevelId(null)}>
@@ -159,7 +184,7 @@ function Scene({
         </fieldset>
       ) : null}
 
-      {model?.hasOpenables ? <p className="hint">Click a door or window to open it</p> : null}
+      {ready && hasOpenables ? <p className="hint">Click a door or window to open it</p> : null}
 
       {hover ? (
         <div className="room-label" style={{ left: hover.x + 14, top: hover.y + 14 }}>
@@ -195,11 +220,12 @@ function LevelButton({
   )
 }
 
-function ProjectHeader({ scene }: { scene: SceneResponse }) {
+function ProjectHeader({ scene, source }: { scene: SceneResponse; source: string }) {
   return (
     <header className="project-header">
       <h1>{projectName(scene)}</h1>
       {scene.project.owner ? <p>by {scene.project.owner.displayName}</p> : null}
+      <p>{source}</p>
     </header>
   )
 }

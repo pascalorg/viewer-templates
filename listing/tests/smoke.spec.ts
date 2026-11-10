@@ -5,6 +5,8 @@ import { expect, type Page, test } from '@playwright/test'
 const fixtures = new URL('./fixtures/', import.meta.url)
 const glb = readFileSync(new URL('house.glb', fixtures))
 const scene = JSON.parse(readFileSync(new URL('scene.json', fixtures), 'utf8'))
+const liveGraph = JSON.parse(readFileSync(new URL('live-scene.json', fixtures), 'utf8'))
+const cube = readFileSync(new URL('cube.gltf', fixtures))
 const GLB_URL = 'https://fixtures.supabase.co/storage/lod0.glb'
 const cors = {
   'access-control-allow-origin': '*',
@@ -12,10 +14,11 @@ const cors = {
   'access-control-allow-headers': 'Authorization, Content-Type',
 }
 
-function sceneBody(overrides: { expiresAt?: string; bake?: object } = {}) {
+function sceneBody(overrides: { expiresAt?: string; bake?: object; graph?: object } = {}) {
   const expiresAt = overrides.expiresAt ?? new Date(Date.now() + 10 * 60_000).toISOString()
   return JSON.stringify({
     ...scene,
+    graph: overrides.graph ?? scene.graph,
     bake: overrides.bake ?? {
       ...scene.bake,
       lods: [{ ...scene.bake.lods[0], url: GLB_URL, bytes: glb.byteLength, expiresAt }],
@@ -155,14 +158,44 @@ test('renews once when storage rejects the signed URL', async ({ page }) => {
   expect(calls).toEqual({ scene: 2, glb: 2 })
 })
 
-test('says when the 3D file is still being prepared', async ({ page }) => {
-  await mockPascal(page, () => ({
-    body: sceneBody({ bake: { status: 'baking', bakeVersion: null, hash: null, lods: [] } }),
+async function mockLiveAssets(page: Page) {
+  await page.route('https://editor.pascal.app/cube.gltf', (route) =>
+    route.fulfill({ body: cube, contentType: 'model/gltf+json', headers: cors }))
+}
+
+for (const status of ['none', 'failed', 'baking', 'ready']) {
+  test(`rebuilds the graph live when bake status is ${status} with no LODs`, async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('console', (message) => message.type() === 'error' && errors.push(message.text()))
+    const calls = await mockPascal(page, () => ({
+      body: sceneBody({ graph: liveGraph, bake: { status, bakeVersion: null, hash: null, lods: [] } }),
+    }))
+    await mockLiveAssets(page)
+    await page.goto('/?project=fixture-house')
+    await expect(page.locator('main[data-source="live"][data-scene-ready="true"]')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('heading', { name: 'Fixture house' })).toBeVisible()
+    await expect(page.locator('canvas')).toBeVisible()
+    expect(await canvasColours(page)).toBeGreaterThan(50)
+    expect(calls.glb).toBe(0)
+    expect(errors).toEqual([])
+  })
+}
+
+test('polls while showing live, then switches to the ready bake', async ({ page }) => {
+  test.setTimeout(60_000)
+  await page.clock.install()
+  const calls = await mockPascal(page, (n) => ({
+    body: n === 1
+      ? sceneBody({ graph: liveGraph, bake: { status: 'baking', bakeVersion: null, hash: null, lods: [] } })
+      : sceneBody(),
   }))
+  await mockLiveAssets(page)
   await page.goto('/?project=fixture-house')
-  await expect(
-    page.getByRole('heading', { name: "This project's 3D file is being prepared" }),
-  ).toBeVisible()
+  await expect(page.locator('main[data-source="live"][data-scene-ready="true"]')).toBeVisible({ timeout: 20_000 })
+  await page.clock.fastForward(30_000)
+  await expect(page.locator('main[data-source="baked"][data-scene-ready="true"]')).toBeVisible()
+  expect(calls).toEqual({ scene: 2, glb: 1 })
 })
 
 test('says when the project is not published', async ({ page }) => {
