@@ -13,7 +13,7 @@ npm run dev
 # open http://localhost:5173/?project=<project id>
 ```
 
-The project must be public and published. Set `VITE_PASCAL_BASE_URL` to read from another Pascal
+The project must be published; direct anonymous links require it to be public. Set `VITE_PASCAL_BASE_URL` to read from another Pascal
 instance (see `.env.example`).
 
 | Script | Does |
@@ -28,5 +28,7 @@ instance (see `.env.example`).
 customisation and the rules to keep (start with: never put a Pascal API key in the browser).
 
 MIT licensed, like the rest of this repository.
+
+Open from Pascal: register and verify your viewer origin with the root callback (`<origin>/`) to open private projects and share links without deployment secrets; see [AGENTS.md](AGENTS.md#open-from-pascal).
 
 Private projects: run `examples/token-server.mjs` with your API key on your server and set `VITE_PASCAL_TOKEN_URL`. See AGENTS.md.

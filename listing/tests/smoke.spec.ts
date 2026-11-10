@@ -1,11 +1,16 @@
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { expect, type Page, test } from '@playwright/test'
 
 const fixtures = new URL('./fixtures/', import.meta.url)
 const glb = readFileSync(new URL('house.glb', fixtures))
 const scene = JSON.parse(readFileSync(new URL('scene.json', fixtures), 'utf8'))
 const GLB_URL = 'https://fixtures.supabase.co/storage/lod0.glb'
-const cors = { 'access-control-allow-origin': '*' }
+const cors = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
+  'access-control-allow-headers': 'Authorization, Content-Type',
+}
 
 function sceneBody(overrides: { expiresAt?: string; bake?: object } = {}) {
   const expiresAt = overrides.expiresAt ?? new Date(Date.now() + 10 * 60_000).toISOString()
@@ -25,7 +30,10 @@ async function mockPascal(
   glbStatus: (n: number) => number = () => 200,
 ) {
   const calls = { scene: 0, glb: 0 }
+  await page.route('**/api/viewers/resolve?*', (route) =>
+    route.fulfill({ status: 404, json: { availability: 'unavailable' }, headers: cors }))
   await page.route('**/api/projects/*/scene*', (route) => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
     const { status = 200, body } = answer(++calls.scene)
     return route.fulfill({ status, body, contentType: 'application/json', headers: cors })
   })
@@ -163,4 +171,203 @@ test('says when the project is not published', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: "This project isn't published yet" }),
   ).toBeVisible()
+})
+
+const ISSUER = 'https://editor.pascal.app'
+const VIEWER = 'viewer_fixture'
+const PROJECT = 'fixture-house'
+const STATE = 's'.repeat(43)
+const VERIFIER = 'v'.repeat(43)
+const CODE = `pvc_${'c'.repeat(43)}`
+const TOKEN = `pvh_${'t'.repeat(43)}`
+const HANDOFF_KEY = `pascal:handoff:${ISSUER}`
+const origin = 'http://localhost:4179'
+const redirectUri = origin + '/'
+const CREDENTIAL_KEY = `pascal:credential:${JSON.stringify([ISSUER, VIEWER, PROJECT, origin])}`
+const entryPath = `/?project=${PROJECT}&viewer=${VIEWER}&access=share`
+const callbackPath = `/?code=${CODE}&state=${STATE}&iss=${encodeURIComponent(ISSUER)}`
+
+async function mockDescriptor(page: Page) {
+  const calls = { resolve: 0 }
+  await page.route('**/api/viewers/resolve?*', (route) => {
+    calls.resolve++
+    expect(new URL(route.request().url()).searchParams.get('origin')).toBe(origin)
+    return route.fulfill({ headers: cors, json: {
+      viewer_id: VIEWER, display_name: 'Fixture viewer', entry_url: redirectUri,
+      redirect_uri: redirectUri, availability: 'available',
+    } })
+  })
+  return calls
+}
+
+async function seedTransaction(page: Page, overrides: Record<string, unknown> = {}) {
+  await page.addInitScript(({ key, value, origin }) => {
+    if (location.origin !== origin || sessionStorage.getItem(`fixture:seeded:${key}`)) return
+    sessionStorage.setItem(key, JSON.stringify(value))
+    sessionStorage.setItem(`fixture:seeded:${key}`, 'true')
+  }, {
+    key: HANDOFF_KEY, origin,
+    value: { verifier: VERIFIER, state: STATE, issuer: ISSUER, viewer: VIEWER, project: PROJECT,
+      redirect_uri: redirectUri, access: 'share', createdAt: Date.now(), returnPath: entryPath, ...overrides },
+  })
+}
+
+async function seedCredential(page: Page, overrides: Record<string, unknown> = {}, key = CREDENTIAL_KEY) {
+  await page.addInitScript(({ key, value, origin }) => {
+    if (location.origin !== origin || sessionStorage.getItem(`fixture:seeded:${key}`)) return
+    sessionStorage.setItem(key, JSON.stringify(value))
+    sessionStorage.setItem(`fixture:seeded:${key}`, 'true')
+  }, {
+    key, origin,
+    value: { access_token: TOKEN, expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      project_id: PROJECT, viewer_id: VIEWER, issuer: ISSUER, origin, access: 'share',
+      renewalAttempted: false, ...overrides },
+  })
+}
+
+async function mockExchange(page: Page, expiresAt = new Date(Date.now() + 3_600_000).toISOString()) {
+  const calls = { exchange: 0, scrubbed: false }
+  await page.route('**/api/viewer-handoff/exchange', async (route) => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    calls.exchange++
+    calls.scrubbed = await page.evaluate(() => !['code', 'state', 'iss'].some((key) => new URLSearchParams(location.search).has(key)))
+    expect(route.request().method()).toBe('POST')
+    expect(route.request().postDataJSON()).toEqual({ code: CODE, code_verifier: VERIFIER, viewer: VIEWER, redirect_uri: redirectUri })
+    expect(route.request().headers()['cookie']).toBeUndefined()
+    expect(route.request().headers()['authorization']).toBeUndefined()
+    await route.fulfill({ headers: cors, json: { access_token: TOKEN, token_type: 'Bearer',
+      expires_at: expiresAt, project_id: PROJECT, viewer_id: VIEWER, revision: 'published' } })
+  })
+  return calls
+}
+
+async function mockAuthorize(page: Page) {
+  await page.route('**/viewer/authorize?*', (route) => route.fulfill({ contentType: 'text/html', body: '<p>Pascal authorize</p>' }))
+}
+
+test('starts the share handoff with independent state, S256 PKCE and the exact callback', async ({ page }) => {
+  const reads = await mockPascal(page)
+  const registry = await mockDescriptor(page)
+  await mockAuthorize(page)
+  await page.goto(entryPath)
+  await page.waitForURL(`${ISSUER}/viewer/authorize?*`)
+  const query = new URL(page.url()).searchParams
+  expect([...query.keys()].sort()).toEqual(['access', 'code_challenge', 'code_challenge_method', 'project', 'redirect_uri', 'state', 'viewer'])
+  expect(query.get('access')).toBe('share')
+  expect(query.get('viewer')).toBe(VIEWER)
+  expect(query.get('project')).toBe(PROJECT)
+  expect(query.get('redirect_uri')).toBe(redirectUri)
+  expect(query.get('code_challenge_method')).toBe('S256')
+  expect(query.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/)
+  // Return to the viewer origin without running its app to inspect the saved transaction.
+  await page.route(`${origin}/inspect`, (route) => route.fulfill({ contentType: 'text/html', body: '<p>Inspect</p>' }))
+  await page.goto('/inspect')
+  const transaction = await page.evaluate((key) => JSON.parse(sessionStorage.getItem(key)!), HANDOFF_KEY)
+  expect(transaction.state).toBe(query.get('state'))
+  expect(transaction.verifier).toMatch(/^[A-Za-z0-9_-]{43}$/)
+  expect(transaction.verifier).not.toBe(transaction.state)
+  expect(query.get('code_challenge')).toBe(createHash('sha256').update(transaction.verifier).digest('base64url'))
+  expect(transaction.returnPath).toBe(entryPath)
+  expect(reads.scene).toBe(0)
+  expect(registry.resolve).toBe(1)
+})
+
+test('exchanges the callback once, scrubs before exchange and reads with the child bearer', async ({ page, context }) => {
+  await context.addCookies([{ name: 'pascal_session', value: 'must-not-send', url: ISSUER }])
+  await mockPascal(page)
+  const registry = await mockDescriptor(page)
+  await seedTransaction(page)
+  const exchange = await mockExchange(page)
+  const read = page.waitForRequest('**/api/projects/*/scene*')
+  const storage = page.waitForRequest(GLB_URL)
+  await page.goto(callbackPath)
+  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  expect((await read).headers()['authorization']).toBe(`Bearer ${TOKEN}`)
+  expect((await read).headers()['cookie']).toBeUndefined()
+  expect((await storage).headers()['authorization']).toBeUndefined()
+  expect(exchange).toEqual({ exchange: 1, scrubbed: true })
+  expect(page.url()).toBe(origin + entryPath)
+  const stored = await page.evaluate((key) => JSON.parse(sessionStorage.getItem(key)!), CREDENTIAL_KEY)
+  expect(stored.access_token).toBe(TOKEN)
+  expect(stored.access).toBe('share')
+  expect(await page.evaluate(() => localStorage.length)).toBe(0)
+  expect(registry.resolve).toBe(1)
+  await page.reload()
+  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  expect(exchange.exchange).toBe(1)
+  expect(registry.resolve).toBe(2)
+})
+
+for (const invalid of ['state', 'issuer', 'age', 'viewer', 'project', 'callback', 'return path', 'unsolicited', 'duplicate state']) {
+  test(`refuses a callback with invalid ${invalid} without exchanging or reading`, async ({ page }) => {
+    const reads = await mockPascal(page)
+    await mockDescriptor(page)
+    if (invalid !== 'unsolicited') await seedTransaction(page, {
+      ...(invalid === 'age' ? { createdAt: Date.now() - 600_001 } : {}),
+      ...(invalid === 'viewer' ? { viewer: 'viewer_other' } : {}),
+      ...(invalid === 'project' ? { project: 'project_other' } : {}),
+      ...(invalid === 'callback' ? { redirect_uri: origin + '/wrong' } : {}),
+      ...(invalid === 'return path' ? { returnPath: '//evil.example/' } : {}),
+    })
+    const exchange = await mockExchange(page)
+    const path = invalid === 'state' ? callbackPath.replace(STATE, 'w'.repeat(43))
+      : invalid === 'issuer' ? callbackPath.replace(encodeURIComponent(ISSUER), encodeURIComponent('https://other.example'))
+      : invalid === 'duplicate state' ? callbackPath + '&state=duplicate' : callbackPath
+    await page.goto(path)
+    await expect(page.locator('main[data-state="reopen"]')).toBeVisible()
+    expect(exchange.exchange).toBe(0)
+    expect(reads.scene).toBe(0)
+    expect(new URL(page.url()).searchParams.has('code')).toBe(false)
+    expect(new URL(page.url()).searchParams.has('state')).toBe(false)
+    expect(new URL(page.url()).searchParams.has('iss')).toBe(false)
+  })
+}
+
+for (const status of [401, 403]) {
+  test(`clears a stored credential after a ${status} read and shows reopen without anonymous fallback`, async ({ page }) => {
+    const reads = await mockPascal(page, () => ({ status, body: JSON.stringify({ error: 'unauthorized' }) }))
+    await mockDescriptor(page)
+    await seedCredential(page)
+    await page.goto(`/?project=${PROJECT}`)
+    await expect(page.getByRole('heading', { name: 'Reopen your share link' })).toBeVisible()
+    expect(await page.evaluate((key) => sessionStorage.getItem(key), CREDENTIAL_KEY)).toBeNull()
+    expect(reads.scene).toBe(1)
+    await expect(page.getByRole('link', { name: 'Open project in Pascal' })).toHaveAttribute('href', `${ISSUER}/editor/${PROJECT}`)
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Reopen your share link' })).toBeVisible()
+    expect(reads.scene).toBe(1)
+  })
+}
+
+test('renews a credential near expiry with its original session mode', async ({ page }) => {
+  const reads = await mockPascal(page)
+  await mockDescriptor(page)
+  await seedCredential(page, { expires_at: new Date(Date.now() + 90_000).toISOString(), access: 'session' })
+  await mockAuthorize(page)
+  await page.goto(`/?project=${PROJECT}`)
+  await page.waitForURL(`${ISSUER}/viewer/authorize?*`)
+  expect(new URL(page.url()).searchParams.get('access')).toBe('session')
+  expect(reads.scene).toBe(0)
+})
+
+test('stops a renewal loop when the renewed credential is already near expiry', async ({ page }) => {
+  const reads = await mockPascal(page)
+  await mockDescriptor(page)
+  await seedTransaction(page, { renewal: true })
+  const exchange = await mockExchange(page, new Date(Date.now() + 90_000).toISOString())
+  await page.goto(callbackPath)
+  await expect(page.getByRole('heading', { name: 'Reopen your share link' })).toBeVisible()
+  expect(exchange.exchange).toBe(1)
+  expect(reads.scene).toBe(0)
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), CREDENTIAL_KEY)).toBeNull()
+})
+
+test('ignores credentials stored for another project and reads public projects anonymously', async ({ page }) => {
+  await mockPascal(page)
+  await mockDescriptor(page)
+  await seedCredential(page, { project_id: 'another-project' }, `pascal:credential:${JSON.stringify([ISSUER, VIEWER, 'another-project', origin])}`)
+  const read = page.waitForRequest('**/api/projects/*/scene*')
+  await page.goto(`/?project=${PROJECT}`)
+  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  expect((await read).headers()['authorization']).toBeUndefined()
 })

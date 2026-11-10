@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchViewerToken, PASCAL_TOKEN_URL } from './config'
 import { fetchGlb, getScene, PascalError, type SceneResponse } from './pascal'
+import {
+  type Access, credentialReadSucceeded, rejectCredential, renewalDelay, ReopenRequired, resolveAccess,
+} from './pascal/access'
 
 export type ListingState =
   | { kind: 'loading' }
+  | { kind: 'opening' }
+  | { kind: 'reopen'; access: 'session' | 'share' }
   | { kind: 'error'; error: PascalError }
   /** The project is readable but its 3D file is not ready (`bake.status` other than ready). */
   | { kind: 'no-file'; scene: SceneResponse }
@@ -28,12 +33,33 @@ export function useListing(baseUrl: string, projectId: string) {
     const controller = new AbortController()
     const { signal } = controller
     let poll: ReturnType<typeof setTimeout> | undefined
+    let renewal: ReturnType<typeof setTimeout> | undefined
+    let access: Access = { kind: 'anonymous' }
     if (!attempt.quiet) setState({ kind: 'loading' })
 
     const run = async () => {
       // A fresh token each attempt: tokens last an hour at most, and a renewal re-reads.
-      const token = PASCAL_TOKEN_URL ? await fetchViewerToken(projectId, signal) : undefined
+      let token: string | undefined
+      if (PASCAL_TOKEN_URL) {
+        token = await fetchViewerToken(projectId, signal)
+      } else {
+        if (!attempt.quiet) setState({ kind: 'opening' })
+        access = await resolveAccess(projectId, baseUrl)
+        if (signal.aborted) return
+        if (access.kind === 'opening') {
+          setState({ kind: 'opening' })
+          return
+        }
+        if (access.kind === 'credential') token = access.credential.access_token
+        if (!attempt.quiet) setState({ kind: 'loading' })
+      }
+      if (signal.aborted) return
       const scene = await getScene(baseUrl, projectId, { signal, token })
+      if (signal.aborted) return
+      if (access.kind === 'credential') {
+        credentialReadSucceeded(access.credential)
+        renewal = setTimeout(() => setAttempt({ quiet: true }), renewalDelay(access.credential))
+      }
       if (scene.bake.status !== 'ready' || scene.bake.lods.length === 0) {
         setState({ kind: 'no-file', scene })
         if (scene.bake.status === 'baking') {
@@ -52,15 +78,30 @@ export function useListing(baseUrl: string, projectId: string) {
             progress: total ? Math.min(1, loaded / total) : null,
           }),
       })
-      setState({ kind: 'ready', scene: glb.scene, bytes: glb.bytes })
+      if (!signal.aborted) setState({ kind: 'ready', scene: glb.scene, bytes: glb.bytes })
     }
 
-    run().catch((error) => {
-      if (!signal.aborted) setState({ kind: 'error', error: asPascalError(error) })
+    run().catch(async (error: unknown) => {
+      if (signal.aborted) return
+      clearTimeout(renewal)
+      try {
+        if (error instanceof PascalError && error.code === 'unauthorized' && access.kind === 'credential') {
+          setState({ kind: 'opening' })
+          await rejectCredential(access.credential, error.status!)
+          return
+        }
+        throw error
+      } catch (failure) {
+        if (signal.aborted) return
+        setState(failure instanceof ReopenRequired
+          ? { kind: 'reopen', access: failure.access }
+          : { kind: 'error', error: asPascalError(failure) })
+      }
     })
     return () => {
       controller.abort()
       clearTimeout(poll)
+      clearTimeout(renewal)
     }
   }, [baseUrl, projectId, attempt])
 

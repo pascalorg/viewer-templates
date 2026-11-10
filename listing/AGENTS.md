@@ -2,7 +2,7 @@
 
 A standalone web page that shows one published Pascal project in 3D: the baked 3D file (GLB) under
 studio light, a floors control, room names and areas on hover, and doors and windows that open on
-click. It reads Pascal's public scene read API and nothing else. It does not use any `@pascal-app/*`
+click. It reads Pascal's published scene API, anonymously or with a short-lived viewer credential. It does not use any `@pascal-app/*`
 package, so it is also the reference for building your own viewer on Pascal.
 
 It is a template: fork it, restyle it, add UI. This file tells you (or your agent) where things are
@@ -12,7 +12,7 @@ and which rules to keep.
 
 | Path | Owns |
 | --- | --- |
-| `src/pascal/` | The API client: the contract schema (`contract.ts`), `getScene` / `fetchGlb` with typed errors and signed-URL renewal (`client.ts`), and read helpers over the scene graph (`graph.ts`). No React and no three.js in here; keep it that way so it can move into an SDK unchanged. |
+| `src/pascal/` | The API client: the contract schema (`contract.ts`), `getScene` / `fetchGlb` with typed errors and signed-URL renewal (`client.ts`), read helpers (`graph.ts`), and browser access resolution and PKCE (`access.ts`, `handoff.ts`). No React and no three.js in here; keep it that way so it can move into an SDK unchanged. |
 | `src/useListing.ts` | Loading flow: read the scene, then download the best 3D file, poll while it is being prepared. |
 | `src/App.tsx`, `src/styles.css` | Screens (loading, errors, no 3D file, WebGL unavailable) and the overlay UI. |
 | `src/viewer/Viewer.tsx` | The canvas: environment light, key light and shadow, camera framing, orbit controls. |
@@ -107,7 +107,48 @@ Pascal account. `npm run fixture` regenerates `tests/fixtures/` (needs KTX-Softw
 `TOKTX=/path/to/toktx`); the fixture is a small two-floor house with a KTX2 texture, a door clip and
 meshopt compression, like a real bake.
 
-## Private projects
+## Open from Pascal
+
+Register this viewer in Pascal settings with its entry URL, exact origins, and the callback
+`<origin>/` (for example `https://viewer.example/` or `http://localhost:5173/`). The callback is
+the same root page served by Vite in development and by the static production build; no extra
+route or SPA rewrite is needed. Register each development port explicitly. Production origins
+must use HTTPS and be verified: request the origin challenge in Pascal settings, serve it as
+plain text at `/.well-known/pascal-viewer-verification`, then verify the origin in settings.
+Pascal does not fetch localhost for verification. Bind the published project to this viewer,
+then open it from Pascal or create a share link pinned to this viewer.
+
+The helper resolves `GET /api/viewers/resolve?origin=<location.origin>` once per page to discover
+the viewer ID and exact callback. No viewer ID or per-project deployment configuration is needed.
+Pascal supplies `project`, `viewer`, and `access=session|share|anonymous` in its entry URL.
+The helper captures and immediately scrubs callback `code`, `state`, and `iss` before React
+renders, validates the saved transaction (including its ten-minute maximum age), then exchanges
+the code using S256 PKCE and `credentials: 'omit'`. No Pascal cookies are sent by API reads.
+
+Access resolves in order: callback, matching unexpired tab credential, private entry authorization,
+then anonymous published read. Direct links without private entry context can read public projects.
+If descriptor discovery is unavailable, only public projects work. An invalid callback or a
+rejected credential stops loading and shows “Reopen from Pascal” or “Reopen your share link”;
+it never silently retries anonymously. Share readers should reopen their original Pascal share
+link; the helper never stores or reconstructs that durable link.
+
+Credentials are isolated by Pascal issuer, viewer, project, and browser origin in `sessionStorage`.
+Never store tokens in `localStorage`, query parameters, build variables, or deployment secrets.
+Transactions and PKCE verifiers also live only in the current tab's `sessionStorage`. Preserve
+only validated local return paths across the round trip. Keep callback bootstrap ahead of any
+third-party scripts or analytics you add, and exclude callback queries and credentials from logs.
+
+Within two minutes of expiry, the helper renews using a fresh top-level authorization round trip
+with the original session/share mode. An expired credential rejected with 401 can also renew.
+There is one renewal attempt with a loop guard; failed or immediately expiring renewals require
+reopening from Pascal. There is no refresh token or hidden iframe. A successful read with a
+fresh credential permits a later renewal cycle. Signed storage URL renewal remains separate:
+storage downloads omit cookies and never receive the Pascal bearer credential.
+
+`VITE_PASCAL_TOKEN_URL`, when set, takes precedence and skips the handoff and registry lookup.
+This remains an alternative for company login flows described below.
+
+## Private projects with your own login
 
 The read works without a credential for public projects. For a private project, your
 server mints a short-lived viewer token from its Pascal API key and your viewer sends it
@@ -156,9 +197,9 @@ Cloudflare Pages).
 
 ## Rules
 
-- Never put a Pascal API key, session or any other secret in the browser. `VITE_*` variables and
-  everything in `src/` ship to every visitor. This template reads public, published projects
-  anonymously; showing private projects needs a server you control that holds the credential.
+- Never put a Pascal API key or account session in the browser bundle. `VITE_*` variables and
+  everything in `src/` ship to every visitor. Public projects read anonymously; private projects
+  use the registered Pascal handoff or your own server's short-lived token endpoint.
 - Do not import `@pascal-app/*`. The template must stay installable from this folder alone.
 - Keep `src/pascal/` free of React and three.js.
 - Keep the CSP in `vite.config.ts` in step with what the page loads. The decoders need
