@@ -39,8 +39,8 @@ export type RequestOptions = {
   /** Inject a fetch, e.g. a server-side one that adds credentials. Defaults to the global fetch. */
   fetch?: typeof fetch
   /**
-   * A short-lived viewer token for a private project, minted by your own server from
-   * its Pascal API key (see examples/token-server.mjs). Never an API key.
+   * A short-lived viewer credential from the Pascal handoff or your own token
+   * endpoint (see examples/token-server.mjs). Never an API key or account session.
    */
   token?: string
 }
@@ -80,8 +80,8 @@ export async function getScene(
       throw new PascalError('not_published', 'This project is not published', 404)
     }
     if (response.status === 404) throw new PascalError('not_found', 'Project not found', 404)
-    if (response.status === 401) {
-      throw new PascalError('unauthorized', 'The credential was rejected', 401)
+    if (response.status === 401 || response.status === 403) {
+      throw new PascalError('unauthorized', 'The credential was rejected', response.status)
     }
     throw new PascalError('http', `Pascal answered ${response.status}`, response.status)
   }

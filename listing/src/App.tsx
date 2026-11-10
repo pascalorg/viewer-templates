@@ -8,7 +8,8 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { PASCAL_BASE_URL, projectIdFromLocation } from './config'
+import { PASCAL_BASE_URL, PASCAL_TOKEN_URL, projectIdFromLocation } from './config'
+import { hasHandoffCallback } from './pascal/handoff'
 import { listLevels, type PascalError, type SceneResponse } from './pascal'
 import { type ListingState, useListing } from './useListing'
 import type { ModelInfo } from './viewer/Model'
@@ -24,7 +25,7 @@ export function App() {
   const projectId = useMemo(() => projectIdFromLocation(), [])
   const webgl = useMemo(() => hasWebGL2(), [])
 
-  if (!projectId) {
+  if (!projectId && !(hasHandoffCallback() && !PASCAL_TOKEN_URL)) {
     return (
       <Status title="No project selected" state="missing-project">
         Add <code>?project=&lt;id&gt;</code> to the address, or set{' '}
@@ -39,7 +40,7 @@ export function App() {
       </Status>
     )
   }
-  return <Listing projectId={projectId} />
+  return <Listing projectId={projectId || ''} />
 }
 
 function Listing({ projectId }: { projectId: string }) {
@@ -49,6 +50,26 @@ function Listing({ projectId }: { projectId: string }) {
   }, [])
 
   if (state.kind === 'loading') return <Status title="Loading project…" state="loading" />
+  if (state.kind === 'opening') return <Status title="Opening from Pascal…" state="opening" />
+  if (state.kind === 'reopen') {
+    const projectUrl = new URL(
+      projectId ? `/editor/${encodeURIComponent(projectId)}` : '/projects',
+      PASCAL_BASE_URL,
+    ).href
+    return (
+      <Status
+        title={state.access === 'share' ? 'Reopen your share link' : 'Reopen from Pascal'}
+        state="reopen"
+      >
+        {state.access === 'share'
+          ? 'Open the original Pascal share link again to restore access.'
+          : 'Open this project from Pascal again to restore access.'}
+        <a className="button" href={projectUrl}>
+          Open project in Pascal
+        </a>
+      </Status>
+    )
+  }
   if (state.kind === 'error') return <ErrorStatus error={state.error} onRetry={reload} />
   if (state.kind === 'no-file') return <NoFileStatus scene={state.scene} onRetry={reload} />
   return <Scene state={state} onRetry={reload} />
