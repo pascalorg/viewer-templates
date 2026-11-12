@@ -103,10 +103,22 @@ function contentSecurityPolicy(env: Record<string, string>): Plugin {
   }
 }
 
+function runtimeTestArtifact(): Plugin {
+  return {
+    name: 'runtime-test-artifact',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'tests/compiled-artifact.txt', source: 'compiled artifact bytes' })
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => ({
+  // Redirects carry an opaque Origin; the test storage stand-in needs public CORS.
+  ...(mode === 'runtime-test' ? { preview: { cors: true } } : {}),
   plugins: [
     react(), tailwindcss(), pascalBoundary(), selfHostedDecoders(),
     contentSecurityPolicy(loadEnv(mode, process.cwd(), 'VITE_')),
+    ...(mode === 'runtime-test' ? [runtimeTestArtifact()] : []),
   ],
   resolve: {
     dedupe: [
@@ -115,5 +127,12 @@ export default defineConfig(({ mode }) => ({
     ],
   },
   // Default dynamic-import splitting keeps the measured chunks below the 20 MiB budget.
-  build: { target: 'es2022', assetsDir: 'assets', sourcemap: false, chunkSizeWarningLimit: 4000 },
+  build: {
+    target: 'es2022', assetsDir: 'assets', sourcemap: false, chunkSizeWarningLimit: 4000,
+    // S2 exercises the runtime without taking over S3's App. Never ship the harness.
+    ...(mode === 'runtime-test' ? {
+      rolldownOptions: { input: { app: 'index.html', runtime: 'tests/runtime.html' } },
+      manifest: 'runtime-manifest.json',
+    } : {}),
+  },
 }))

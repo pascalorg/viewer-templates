@@ -1,8 +1,9 @@
-# Pascal template — S1 scaffold
+# Pascal template — S1 scaffold and S2 runtime
 
 This folder is independently installable with public npm packages and six pinned public git
-plugins. Only the fixture scaffold is implemented. Do not infer hosted-viewer parity from it.
-Later slices add project access, the plugin allowlist and hybrid scene assembly. Community
+plugins. The default page is the fixture scaffold; the runtime API and plugin allowlist are
+implemented separately. Do not infer hosted-viewer parity from it. Later slices add project
+access and hybrid scene assembly. Community
 likes, duplicate, collections, SEO text and private plugins are outside the intended template.
 
 | Path | Responsibility |
@@ -12,6 +13,7 @@ likes, duplicate, collections, SEO text and private plugins are outside the inte
 | `src/config.ts` | Public environment configuration and reserved URL parsing. |
 | `src/styles.css` | Tailwind, viewer/ui theme, package sources and Barlow. |
 | `src/pascal/` | Standalone contract, client and access/handoff helpers. Keep byte-identical to `listing/src/pascal/`; root CI enforces it. |
+| `src/runtime/` | Render bootstrap, literal lazy plugin allowlist, hosted bounded loader, material mapping and read-only project artifacts. `prepareSceneRuntime` owns the read-only lease and cleanup; see README for assembly signatures. |
 | `vite.config.ts` | Editor/Next boundary, singleton dedupe, local decoders and production CSP. |
 | `scripts/check-build.mjs` | Bundle/install/lock boundary report, hosting paths/extensions and stricter size budgets. |
 | `public/` | The viewer's 13 MP3 sounds and seven WebP control icons from the public editor. |
@@ -30,9 +32,10 @@ the hosted viewer tree shape and use viewer/ui rather than forking its component
 
 Optional plugins must use an explicit build-time allowlist of package pins and literal dynamic
 `/render` imports, never graph-driven imports. Keep trees opt-in. The pinned trees render entry
-requires a compiler-only `Plugin` declaration via `paths` when it is introduced: Vite image
+uses a compiler-only `Plugin` declaration via `paths`: Vite image
 imports are strings but the plugin's preset art assumes `{ src }`. The other five typecheck
-with `vite/client`. No installed plugin source patches. Remove `.npmrc` legacy peer resolution
+with `vite/client`. Unused-local/parameter checks are disabled for their raw TS dependencies;
+strict type checking remains enabled. No installed plugin source patches. Remove `.npmrc` legacy peer resolution
 after upstream makes editor optional and widens core/viewer ranges at the chosen pins.
 
 Preserve the boundary against `@pascal-app/editor` and `next`, the three Pascal 1.1.2 pins (bump
@@ -46,3 +49,5 @@ the eventual ready message is `pascal:viewer-ready`. They do not change S1's fix
 
 Run `npm ci`, `npm run typecheck`, `npm run build`, `npm run check`, `npm run test:e2e` and
 `VIEWER_ID=viewer_dryrun npm run deploy:dry`. See [README.md](README.md) for setup and scope.
+`test:e2e` adds a runtime-only HTML entry via `--mode runtime-test`; the normal build excludes
+it. Use `PASCAL_TEST_PORT` to isolate concurrent worktrees. Rebuild normally before deploying.

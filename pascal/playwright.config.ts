@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const port = 4180
+const port = Number(process.env.PASCAL_TEST_PORT || 4180)
+const host = '127.0.0.1'
 
 /** Serves the production build (`npm run build` first; `npm run test:e2e` does both). */
 export default defineConfig({
@@ -9,12 +10,12 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   webServer: {
-    command: `npx vite preview --port ${port} --strictPort`,
-    url: `http://localhost:${port}`,
-    reuseExistingServer: !process.env.CI,
+    command: `npx vite preview --mode runtime-test --host ${host} --port ${port} --strictPort`,
+    url: `http://${host}:${port}`,
+    reuseExistingServer: false,
   },
   use: {
-    baseURL: `http://localhost:${port}`,
+    baseURL: `http://${host}:${port}`,
     trace: 'retain-on-failure',
   },
   projects: [
