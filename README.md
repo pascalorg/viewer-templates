@@ -22,6 +22,8 @@ Or deploy a copy straight away:
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fpascalorg%2Fviewer-templates%2Ftree%2Fmain%2Flisting&project-name=pascal-viewer&env=VITE_PASCAL_PROJECT_ID&envDescription=The%20id%20of%20a%20published%20Pascal%20project)
 
+Or host the build on Pascal at `https://<slug>.pascal-viewer.app`: see [Deploy to Pascal](listing/README.md#deploy-to-pascal).
+
 Each template's `AGENTS.md` explains the read, what the 3D file contains and how to customise it, for you and for your coding agent.
 
 ## Rules every template follows
