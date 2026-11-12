@@ -1,175 +1,158 @@
 # Pascal viewer
 
-Pascal's hosted viewer (`editor.pascal.app/viewer/<id>`) rebuilt on
-`@pascal-app/{core,viewer,nodes}@1.1.4`. Open `/?project=<id>` (or set
-`VITE_PASCAL_PROJECT_ID`). Access, handoff, bake download/renewal, allowlisted plugins,
-library materials and read-only artifacts are prepared before the scene mounts.
-`src/viewer/ProjectViewer.tsx` is the assembly, shaped like the hosted one: with a ready bake
-the GLB draws the building while interactive items, scans/guides and `bake: 'replace'` plugin
-kinds are rebuilt live; without one the whole graph is rebuilt live. Camera controls, the
-opening camera, header, controls bar, floor plan and split view, rooms, walkthrough, drone,
-callouts and sounds all come from `@pascal-app/viewer/ui` and `@pascal-app/viewer/sfx`.
+Pascal's hosted 3D viewer (`editor.pascal.app/viewer/<id>`) rebuilt as a static Vite and React
+app on the public `@pascal-app/core`, `@pascal-app/viewer` and `@pascal-app/nodes` packages
+(`1.1.4`). It has the hosted viewer's header, controls bar, 3D, 2D and split views, rooms,
+walkthrough, drone, selection callouts and sounds, all from `@pascal-app/viewer/ui` and
+`@pascal-app/viewer/sfx`.
+
+It is a template: a standalone project, meant to be forked and restyled. It does not use
+Pascal's editor package or Next.js.
 
 ```bash
-npm ci
+npm install
 npm run dev
+# open http://localhost:5173/?project=<project id>
 ```
 
-Right-drag to orbit, middle-drag or space + drag to pan, scroll to zoom, as on editor.pascal.app.
-The offline test fixture is a reduced copy of the public editor's
-`fixtures/viewer-live/scene.json`: site, building, level, four walls and one zone, with no remote
-assets.
+The project must be published; direct anonymous links require it to be public.
 
-```bash
-npm run typecheck
-npm run build
-npm run check
-npx playwright install chromium
-npm run test:e2e
-VIEWER_ID=viewer_Abc123DEF456ghi7 npm run deploy:dry
-```
+## Choosing a project
 
-The production build prepends the CSP meta to `index.html`, serves matching Three decoders from
-`/decoders/`, rejects editor/Next imports and emits `build-boundary.json` containing package
-names and entry-chunk plugin checks. `check` validates the installed/locked/bundled packages,
-hosting extensions and budgets: 20 MiB per file, 90 MiB total, 1,500 files. Vite's default lazy
-chunking is sufficient; assets keep their default content-hashed names.
+The page shows the project named in the address, `/?project=<id>`. Without one it uses
+`VITE_PASCAL_PROJECT_ID`, and without that it asks for a project. When Pascal opens the viewer
+(Open from Pascal), the project comes from Pascal's callback.
 
-The six public plugins are pinned to Community's exact commits in the runtime allowlist. They
-load only when their enabled kinds occur in the resolved graph. `.npmrc` uses `legacy-peer-deps` because the plugins require
-editor peers and several still declare core/viewer `<1`. Render peers are explicit dependencies.
-The trees loader uses a compiler-only paths shim (`src/runtime/trees-render.d.ts`):
-its preset thumbnails assume Next image objects, while Vite imports URLs. The other five render
-entries typecheck directly with `vite/client`. TypeScript's unused-local/parameter checks are enabled. TypeScript 7 has no per-directory
-unused option and still checks imported plugin TS despite `exclude`. `npm run typecheck` runs
-the compiler and filters only unused-symbol diagnostics under `node_modules`; every template
-diagnostic and all other dependency type errors remain failures.
-Never patch installed plugin source or import a package
-name supplied by a scene graph. Trees remains opt-in (`VITE_PASCAL_PLUGIN_TREES=0`).
+| Variable | Meaning |
+| --- | --- |
+| `VITE_PASCAL_BASE_URL` | Pascal instance to read from, default `https://editor.pascal.app`. |
+| `VITE_PASCAL_ASSETS_URL` | Base URL the viewer resolves relative asset paths against, default `VITE_PASCAL_BASE_URL`. |
+| `VITE_PASCAL_PROJECT_ID` | Project shown when the address has no `?project=`. |
+| `VITE_PASCAL_SOURCE` | `auto` (default): ready bake, otherwise live; `baked`: require a ready bake; `live`: always rebuild. |
+| `VITE_PASCAL_PLUGIN_TREES` | `1` adds the trees plugin to the allowlist. Off by default. |
+| `VITE_PASCAL_POLL_BAKE` | `1` reads the scene again every 30 seconds while a bake is in progress, and switches to it when ready. Off by default, as on the hosted viewer. |
 
-The public build-time variables in `.env.example` configure the API/assets origin, default
-project, source mode, trees flag and optional bake polling. URL flags match the hosted viewer:
-`embed=1` (header without the owner line, controls bar and stage switcher, no guest prompt;
-posts `{ type: 'pascal:viewer-ready', projectId }` to the parent frame once the scene shows),
-`hideHeader=1`, `hideBottomBar=1` and `camera=px,py,pz,tx,ty,tz[,fov]` or `camera=saved`.
-`main[data-scene-ready]` turns true when the loader lifts. System light/dark mode is active. Never put a key or token into `VITE_*` variables. On Pascal hosting keep the API
-origin `https://editor.pascal.app`; its header CSP blocks arbitrary asset/API origins regardless
-of this page's meta policy. A meta policy cannot set `frame-ancestors`.
+All of them are read at build time and are public: Vite inlines `VITE_*` values into the bundle.
+Never put a key or token in them. See `.env.example`.
 
-`src/pascal/` is byte-identical to listing's standalone API/access/handoff client and root CI
-checks that equality. Callback capture and query scrubbing run before React renders; project
-access resolution runs through `useProjectScene` and `projectSceneRuntime`. See [listing's contract and handoff rules](../listing/AGENTS.md).
+## URL flags
 
-The 13 viewer sound files and seven control icons are byte-for-byte copies from the public
-editor's `apps/editor/public/`, served from this page's origin.
+The flags match the hosted viewer. `1`, `true` and `yes` turn a flag on.
 
-The template deliberately omits community likes/duplicate, collections, view counts, analytics
-and SEO text. The owner's name is plain text (the public read returns no profile address), and
-"Get started" links to editor.pascal.app. Kinds from Pascal's private plugins are skipped with
-one console warning per kind and no on-screen notice.
+| Flag | Does |
+| --- | --- |
+| `embed=1` | For iframes: no owner line and no "Get started" prompt. When the scene is on screen, posts `{ type: 'pascal:viewer-ready', projectId }` to the parent frame. |
+| `hideHeader=1` | Hides the scene header (top left). |
+| `hideBottomBar=1` | Hides the controls bar (bottom center). |
+| `camera=px,py,pz,tx,ty,tz[,fov]` | Opens on this camera position and target. `camera=saved` uses the camera saved on the site or building. The loader stays up until the pose is in place. |
 
-To validate a static build with Pascal's CLI (no key or upload):
+`main[data-scene-ready="true"]` is set once the loader lifts, and `data-source` is `baked` or
+`live`.
 
-```bash
-npx @pascal-app/cli@1.1.4 viewer deploy dist --viewer viewer_Abc123DEF456ghi7 --dry-run
-```
+## How it renders
 
-For an actual deployment follow [listing's deployment guide](../listing/README.md#deploy).
-Keep deployment keys in your shell, never in this folder or the browser bundle.
+With a ready bake, the baked 3D file draws the building, and interactive items, scans, guides and
+plugin parts marked for live replacement are rebuilt from the published scene graph on top of
+it. Without a ready bake, the whole published graph is rebuilt live.
 
-## Runtime API for scene assembly
+Before the scene mounts, the page resolves access, downloads the bake, registers the project's
+library materials, sets up a read-only artifact store and loads the plugins the scene needs.
+`src/viewer/ProjectViewer.tsx` is the assembly.
 
-Import from `src/runtime/bootstrap.ts` and call before mounting either a live graph or baked
-GLB with live replacements:
+## Plugins
 
-```ts
-prepareSceneRuntime(options: PrepareSceneRuntimeOptions): Promise<PreparedSceneRuntime>
+Plugins are loaded from an allowlist in `src/runtime/plugins.ts`. Each entry names a package, the
+kind prefix it draws (`pool:`, `streetscape:` and so on) and a literal `import()` of its `/render`
+entry. The packages are pinned to exact git commits in `package.json`.
 
-type PrepareSceneRuntimeOptions = {
-  projectId: string
-  graph: SceneGraph
-  libraryMaterials?: readonly unknown[]
-  baseUrl?: string              // defaults to VITE_PASCAL_BASE_URL
-  token?: string                // tab's short-lived pvh_ credential, never a build variable
-  signal?: AbortSignal
-  onLate?: () => void           // remount live graph / refresh GLB replacement nodes
-  pluginTimeoutMs?: number      // defaults to 20_000
-}
-type PreparedSceneRuntime = {
-  setup: ReturnType<typeof publishedSceneSetup>
-  unknownKinds: Record<string, number>
-  pluginsLoaded: boolean        // true = settled before deadline; failures are logged/skipped
-  dispose: () => void
-}
-```
+| Package | Kinds | Default |
+| --- | --- | --- |
+| `@pascal-app/plugin-articraft` | `articraft:` | On |
+| `@pascal-app/plugin-boots` | `boots:` | On |
+| `@pascal-app/plugin-environment` | `environment:` | On |
+| `@pascal-app/plugin-pool` | `pool:` | On |
+| `@pascal-app/plugin-streetscape` | `streetscape:` | On |
+| `@pascal-app/plugin-trees` | `trees:` | Off; `VITE_PASCAL_PLUGIN_TREES=1` |
 
-The call registers built-ins synchronously, configures assets/sounds/icons/local decoders,
-acquires the scene read-only lease, registers the served material rows in catalog shape, sets
-the project artifact store, and waits for only the plugins the graph needs. Then call
-`useScene.getState().setScene(nodes, rootNodeIds, runtime.setup)` on the live path. The baked
-path uses the same preparation before `buildGlb*` helpers. Hold the result until the scene has
-unmounted; stop spatial-grid subscriptions first, then call `runtime.dispose()` to release the
-lease, detach the artifact store and revoke blob URLs. Disposal is idempotent; failed/aborted
-preparation cleans itself up. Registries are singletons: use one project per page and reload
-to switch projects. A late chunk's callback is suppressed after disposal/abort. After a late
-arrival, `warnUnknownKinds(graph)` refreshes the unknown-kind counts.
+A plugin loads only when the scene has one of its kinds and the scene lists it as installed
+(scenes saved before install state existed enable all of them). Plugins are imported lazily and
+never land in the entry chunk, so a visitor downloads only what the scene uses. The page waits up to 20 seconds for plugins; one
+that arrives later redraws the scene. Kinds no plugin draws are skipped with one console warning
+per kind.
 
-Only literal `/render` imports in `plugins.ts` may execute. No discovery hook or scene-provided
-package/URL is imported. A plugin requires its kind prefix and an installed id; a missing or
-malformed installed list enables legacy plugins, while `[]` disables them. Trees is excluded
-unless `VITE_PASCAL_PLUGIN_TREES=1`. Environment loading also registers its viewer presentation.
-Unknown kinds are counted and warned once per kind per page; the remaining graph renders.
-If a chunk is still pending at the deadline,
-its missing kinds can appear in this snapshot until the late callback remounts the scene.
+To add a plugin, install it at an exact version or commit, add an entry to `renderSources` in
+`src/runtime/plugins.ts` with a literal `import('<package>/render')`. `src/styles.css` already
+scans `@pascal-app/plugin-*/src` for Tailwind classes; add an `@source` line for a package named
+otherwise. To remove one, delete its entry and uninstall the package. Never import a package name that comes from scene data.
 
-Lower-level exports, for assembly that needs to control individual steps:
+## Customise
 
-```ts
-// bootstrap.ts
-bootstrapRuntime(): void
-loadSceneRenderPlugins(packageNames: readonly string[]): Promise<void>
-// plugins.ts
-neededPlugins(graph: PluginGraph): string[]
-pluginInstallStateOf(graph?: { installedPlugins?: unknown } | null): PluginInstallState
-publishedSceneSetup(graph: { materials?: unknown; installedPlugins?: unknown }): {
-  materials: Record<SceneMaterialId, SceneMaterial>; collections: {}
-  installedPlugins: string[]; hasExplicitPluginInstallState: boolean
-}
-warnUnknownKinds(graph: PluginGraph): Record<string, number>
-// materials.ts
-registerReferencedLibraryMaterials(materials: readonly unknown[]): void
-// artifacts.ts
-referencedArtifactHashes(graph: unknown): string[]
-createProjectArtifactStore(options: ProjectArtifactOptions): Promise<{
-  store: ArtifactStore; dispose: () => void
-}>
-```
+- **Chrome**: `src/viewer/ViewerOverlay.tsx` (scene header and controls bar),
+  `src/viewer/GuestPrompt.tsx` (the "Get started" card), `src/viewer/screens.tsx` (loading,
+  error and access screens).
+- **Scene**: `src/viewer/ProjectViewer.tsx`. It follows the hosted viewer's tree; the components
+  come from `@pascal-app/viewer/ui`, so prefer their props to forking them.
+- **Theme and type**: `src/styles.css`. It imports the viewer UI theme and Barlow; override its
+  tokens rather than copying components. Light and dark follow the system setting.
+- **Tab icon**: `public/favicon.ico`, linked from `index.html`.
+- Keep copy in sentence case and buttons fully rounded.
 
-`PluginGraph` has `nodes: Record<string, { type: string }>` and optional `installedPlugins: unknown`.
-`PluginInstallState` has `installedPlugins: string[]` and `hasExplicitPluginInstallState: boolean`.
-`ProjectArtifactOptions` has `baseUrl`, `projectId`, `graph: unknown`, optional `token` and `signal`.
-`plugin-loader.ts` is copied verbatim from the hosted viewer: it exports `createPluginLoader`,
-`PluginLoadError`, `whenLoaded` and `loadScenePluginsBounded` with retry, deduplication, a bounded
-wait and late-arrival notification.
+## Scripts
 
-Anonymous artifact URLs use the public project artifact route and its signed storage redirect.
-With a credential, preparation walks all nested `artifact://<sha256>` fields, deduplicates hashes
-and prefetches their bytes with `credentials: 'omit'`. Native fetch strips the bearer header on
-the cross-origin storage redirect. Private URL lookups then return blob URLs; missing hashes
-return null. `put` rejects and `text` returns null: authored script text is editor-only, while
-viewers consume compiled artifacts. Artifact 401s propagate as `PascalError('unauthorized')` for
-the access layer to handle; they never silently fall back to anonymous reads.
+| Script | Does |
+| --- | --- |
+| `npm run dev` | Development server. |
+| `npm run build` | Static site in `dist/`, with the Content-Security-Policy and the three.js decoders. |
+| `npm run typecheck` | TypeScript check (`scripts/typecheck.mjs`). |
+| `npm run check` | Checks `dist/` against the hosting limits and the package boundary (`scripts/check-build.mjs`). |
+| `npm run test:e2e` | Builds a test build, then runs the Playwright tests against a mocked API. |
+| `npm run deploy:dry` | Dry run of `pascal viewer deploy` with `@pascal-app/cli@1.1.4`; needs `VIEWER_ID`. |
 
-`npm run test:e2e` builds with `--mode runtime-test`, adding `tests/runtime.html`,
-`tests/fixtures/hook.html`, an artifact redirect target and a manifest only for tests. App,
-runtime and hook tests all use the same preview server, configured with `PASCAL_TEST_PORT`
-(default 4180). No separate development server is started. Tests cover pool geometry and lazy
-chunk requests through App, materials, missing kinds, artifact redirects/cleanup, loader
-deadlines, access/handoff, bake renewal, hook cancellation and the viewer chrome (icons, a door
-sound from the callout, embed and hide flags, the opening camera, walkthrough). API responses and external
-assets are mocked in the offline rendering smokes. The pool fixture extends the common live
-graph; runtime tests render through the test-only `tests/fixtures/FixtureViewer.tsx`.
+`npm run test:e2e` needs `npx playwright install chromium` once. It runs offline with software
+WebGL. Its build includes test pages, so run `npm run build` again before `check` or a deploy;
+`check` refuses a test build. Set `PASCAL_TEST_PORT` (default 4180) to run two copies at once.
 
-The normal `npm run build` includes no test modules or harness entries, enforced by `check`.
-Use `PASCAL_TEST_PORT=4182 npm run test:e2e` to isolate another worktree. Rebuild normally before
-`check` and deployment; `check` rejects a runtime-test build.
+## Deploy to Pascal
+
+Pascal can host the built site at `https://<slug>.pascal-viewer.app`. This uses
+`pascal viewer deploy` from `@pascal-app/cli` 1.1.4.
+
+1. Register the viewer in Pascal under Settings → Viewers → **Host on Pascal**. Pascal assigns
+   the origin, verifies it on the first deploy and registers the root callback (`<origin>/`)
+   this template uses.
+2. Set any `VITE_*` variables, then run `npm run build`. They're read at build time.
+3. Check the build, then deploy it with an API key that can manage the viewer's workspace:
+
+   ```bash
+   npm run check
+   npx @pascal-app/cli@1.1.4 viewer deploy dist --viewer <viewer id> --dry-run
+   PASCAL_API_KEY='sk_live_...' npx @pascal-app/cli@1.1.4 viewer deploy dist --viewer <viewer id>
+   ```
+
+   The dry run lists skipped hidden files and anything that would stop the deploy. The deploy
+   ends with `Live at: https://<slug>.pascal-viewer.app/`.
+
+4. Bind a published project to the viewer, then open it from Pascal or create a share link
+   pinned to it.
+
+Keep the key in your shell, never in `.env`. Pascal hosting sends its own Content-Security-Policy,
+which allows connections only to the site, `editor.pascal.app`, Supabase storage and the decoder
+CDNs. A `VITE_PASCAL_BASE_URL` or `VITE_PASCAL_ASSETS_URL` on another host is blocked there.
+Private projects use Open from Pascal; see
+[listing's AGENTS.md](../listing/AGENTS.md#open-from-pascal). The build is a static site, so
+Vercel, Cloudflare Pages and other static hosts work too.
+
+## Known gaps
+
+- Nodes from Pascal's private plugins (for example the home designer's procedural parts) are
+  skipped and draw nothing when they are rebuilt live. There is no on-screen notice, only a
+  console warning.
+- Assets hosted on outside domains can be blocked by the hosting Content-Security-Policy.
+- The public plugins need `legacy-peer-deps` (in `.npmrc`) until their peer ranges are updated.
+- No likes, duplicate, collections or view counts.
+- The owner is shown as a plain name with no profile link.
+
+[`AGENTS.md`](AGENTS.md) covers the rules to keep and where things live. The read API and access
+rules are in [listing's AGENTS.md](../listing/AGENTS.md).
+
+MIT licensed, like the rest of this repository.
