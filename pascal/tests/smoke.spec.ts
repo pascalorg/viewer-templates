@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test'
+import { liveScene, mockPascal, PROJECT } from './pascal-mocks'
 
 test('the public Viewer builds and renders the local live scene', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
-  // The S1 scene has no network assets; prove the fixture works offline.
-  await page.route('https://**', (route) => route.abort())
-  await page.goto('/')
+  // The S3 API is mocked; the temporary S1 fixture needs no network assets.
+  await mockPascal(page, () => ({ body: liveScene() }))
+  await page.goto(`/?project=${PROJECT}`)
   await expect(page.locator('main[data-scene-ready=true]')).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole('status')).toContainText('Live fixture ready')
   const canvas = page.locator('canvas')
