@@ -1,18 +1,8 @@
-import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { createServer, type ViteDevServer } from 'vite'
 import { liveScene, mockPascal, sceneBody, seedCredential, ISSUER, TOKEN } from './pascal-mocks'
 
-// An isolated fixture entry exercises the public hook API and runtime boundary.
-// App's production smoke still runs against vite preview on 4180.
-let server: ViteDevServer
-let harnessUrl: string
-test.beforeAll(async () => {
-  server = await createServer({ configFile: resolve('vite.config.ts'), server: { port: 0, host: 'localhost' } })
-  await server.listen()
-  harnessUrl = server.resolvedUrls!.local[0]! + 'tests/fixtures/hook.html'
-})
-test.afterAll(async () => { await server?.close() })
+// The hook and runtime harnesses share App's production preview server and origin.
+const harnessUrl = '/tests/fixtures/hook.html'
 
 test('waits for preparation, passes the renewed graph, and cleans up the bake and late plugins', async ({ page }) => {
   const calls = await mockPascal(page, (n) => {

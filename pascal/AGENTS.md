@@ -1,14 +1,15 @@
-# Pascal template — S1 scaffold and S2 runtime
+# Pascal template — integrated data flow and runtime
 
 This folder is independently installable with public npm packages and six pinned public git
-plugins. The default page is the fixture scaffold; the runtime API and plugin allowlist are
-implemented separately. Do not infer hosted-viewer parity from it. Later slices add project
+plugins. The page resolves projects and prepares plugins, materials and artifacts before rendering
+their graph with the simple scaffold viewer. Ready bakes are downloaded but hybrid GLB
+assembly awaits public camera controls. Do not infer hosted-viewer parity from it. Later slices add project
 access and hybrid scene assembly. Community
 likes, duplicate, collections, SEO text and private plugins are outside the intended template.
 
 | Path | Responsibility |
 | --- | --- |
-| `src/App.tsx` | Public Viewer, built-in render plugin, read-only lease and local fixture. |
+| `src/App.tsx` | Project states and runtime adapter; resolved graphs use `viewer/FixtureViewer.tsx`. |
 | `src/main.tsx` | Capture/scrub handoff callback before render; system theme listener. |
 | `src/config.ts` | Public environment configuration and reserved URL parsing. |
 | `src/styles.css` | Tailwind, viewer/ui theme, package sources and Barlow. |
@@ -34,8 +35,9 @@ Optional plugins must use an explicit build-time allowlist of package pins and l
 `/render` imports, never graph-driven imports. Keep trees opt-in. The pinned trees render entry
 uses a compiler-only `Plugin` declaration via `paths`: Vite image
 imports are strings but the plugin's preset art assumes `{ src }`. The other five typecheck
-with `vite/client`. Unused-local/parameter checks are disabled for their raw TS dependencies;
-strict type checking remains enabled. No installed plugin source patches. Remove `.npmrc` legacy peer resolution
+with `vite/client`. Unused-local/parameter checks are enabled; `scripts/typecheck.mjs` filters only unused-symbol
+diagnostics from raw TS in node_modules because TypeScript has no per-directory unused option.
+Template diagnostics and all other dependency errors still fail. No installed plugin source patches. Remove `.npmrc` legacy peer resolution
 after upstream makes editor optional and widens core/viewer ranges at the chosen pins.
 
 Preserve the boundary against `@pascal-app/editor` and `next`, the three Pascal 1.1.2 pins (bump
@@ -45,9 +47,9 @@ origins even if a local meta policy is widened. Do not add remote scripts.
 
 Use sentence case and fully rounded buttons. Override theme tokens instead of copying the UI.
 Reserved later URL inputs are `project`, `embed`, `hideHeader`, `hideBottomBar` and `camera`;
-the eventual ready message is `pascal:viewer-ready`. They do not change S1's fixture page.
+the eventual ready message is `pascal:viewer-ready`. Project selection is active; chrome and camera flags await assembly.
 
 Run `npm ci`, `npm run typecheck`, `npm run build`, `npm run check`, `npm run test:e2e` and
 `VIEWER_ID=viewer_dryrun npm run deploy:dry`. See [README.md](README.md) for setup and scope.
-`test:e2e` adds a runtime-only HTML entry via `--mode runtime-test`; the normal build excludes
-it. Use `PASCAL_TEST_PORT` to isolate concurrent worktrees. Rebuild normally before deploying.
+`test:e2e` adds runtime and hook HTML entries via `--mode runtime-test`; all tests share
+the preview server. The normal build excludes every harness and test module; `check` enforces it. Use `PASCAL_TEST_PORT` to isolate concurrent worktrees. Rebuild normally before deploying.

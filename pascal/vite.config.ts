@@ -34,11 +34,13 @@ function pascalBoundary(): Plugin {
               .map((id) => normalize(id).split('/node_modules/').at(-1)!)
           : [],
       )
+      const testModules = modules.filter((id) => normalize(id).startsWith(`${process.cwd()}/tests/`))
+        .map((id) => normalize(id).slice(process.cwd().length + 1))
       // Public package names only; never publish absolute workspace paths.
       this.emitFile({
         type: 'asset',
         fileName: 'build-boundary.json',
-        source: JSON.stringify({ moduleCount: modules.length, packages, entryPluginModules }, null, 2),
+        source: JSON.stringify({ moduleCount: modules.length, packages, entryPluginModules, testModules }, null, 2),
       })
     },
   }
@@ -129,9 +131,9 @@ export default defineConfig(({ mode }) => ({
   // Default dynamic-import splitting keeps the measured chunks below the 20 MiB budget.
   build: {
     target: 'es2022', assetsDir: 'assets', sourcemap: false, chunkSizeWarningLimit: 4000,
-    // S2 exercises the runtime without taking over S3's App. Never ship the harness.
+    // All browser harnesses use the same preview build. Never ship these entries.
     ...(mode === 'runtime-test' ? {
-      rolldownOptions: { input: { app: 'index.html', runtime: 'tests/runtime.html' } },
+      rolldownOptions: { input: { app: 'index.html', runtime: 'tests/runtime.html', hook: 'tests/fixtures/hook.html' } },
       manifest: 'runtime-manifest.json',
     } : {}),
   },

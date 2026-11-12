@@ -1,11 +1,10 @@
+import { pluginRenderEntry, renderedColorCount } from './rendering'
 import { expect, test } from '@playwright/test'
-import { readFile } from 'node:fs/promises'
 
 test.setTimeout(90_000)
 
 test('pool geometry renders, and its lazy entry is absent on a non-pool visit', async ({ page }) => {
-  const manifest = JSON.parse(await readFile('dist/runtime-manifest.json', 'utf8')) as Record<string, { file: string }>
-  const poolEntry = Object.entries(manifest).find(([key]) => key.includes('plugin-pool/') && key.endsWith('/render.ts'))?.[1].file
+  const poolEntry = await pluginRenderEntry('plugin-pool')
   expect(poolEntry, 'the test build must emit an independent pool render chunk').toBeTruthy()
   const requests: string[] = []
   const errors: string[] = []
@@ -24,22 +23,7 @@ test('pool geometry renders, and its lazy entry is absent on a non-pool visit', 
     .filter((mesh) => ['pool-shell-floor', 'pool-shell-walls', 'pool-water', 'pool-coping'].includes(mesh.name))
     .filter((mesh) => mesh.vertices > 0).map((mesh) => mesh.name).sort()), { timeout: 20_000 })
     .toEqual(['pool-coping', 'pool-shell-floor', 'pool-shell-walls', 'pool-water'])
-  // Read the composited canvas, since WebGL clears its drawing buffer after presenting.
-  const screenshot = await page.locator('canvas').screenshot()
-  const colorCount = await page.evaluate(async (base64) => {
-    const source = new Image()
-    source.src = `data:image/png;base64,${base64}`
-    await source.decode()
-    const copy = document.createElement('canvas')
-    copy.width = copy.height = 96
-    const ctx = copy.getContext('2d')!
-    ctx.drawImage(source, 0, 0, 96, 96)
-    const { data } = ctx.getImageData(0, 0, 96, 96)
-    const colors = new Set<string>()
-    for (let i = 0; i < data.length; i += 4) colors.add(`${data[i]},${data[i + 1]},${data[i + 2]}`)
-    return colors.size
-  }, screenshot.toString('base64'))
-  expect(colorCount).toBeGreaterThan(30)
+  expect(await renderedColorCount(page.locator('canvas'))).toBeGreaterThan(30)
   expect(errors).toEqual([])
 })
 

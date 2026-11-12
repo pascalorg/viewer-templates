@@ -1,7 +1,5 @@
 // Only included by --mode runtime-test. No test hooks are exposed by the production page.
-import { getCatalogMaterialById, getMaterialPresetByRef, initSpatialGridSync, useScene } from '@pascal-app/core'
-import { Viewer, useViewer } from '@pascal-app/viewer'
-import { OrbitControls } from '@react-three/drei'
+import { getCatalogMaterialById, getMaterialPresetByRef, useScene } from '@pascal-app/core'
 import { useThree } from '@react-three/fiber'
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -10,8 +8,8 @@ import type { SceneGraph } from '../src/pascal/contract'
 import { prepareSceneRuntime, type PreparedSceneRuntime } from '../src/runtime/bootstrap'
 import { createProjectArtifactStore, referencedArtifactHashes } from '../src/runtime/artifacts'
 import { neededPlugins, pluginInstallStateOf, warnUnknownKinds } from '../src/runtime/plugins'
-import liveFixture from './fixtures/live-scene.json'
-import pluginFixture from './fixtures/plugin-scene.json'
+import { FixtureViewer } from '../src/viewer/FixtureViewer'
+import { liveFixture, pluginFixture, libraryMaterials } from './fixtures/scenes'
 import '../src/styles.css'
 
 const params = new URLSearchParams(location.search)
@@ -59,46 +57,25 @@ function SceneProbe() {
 
 function RuntimeFixture() {
   const [loaded, setLoaded] = useState(false)
-  const [ready, setReady] = useState(false)
   const [error, setError] = useState<unknown>(null)
+  const [revision, setRevision] = useState(0)
   useEffect(() => {
-    let runtime: PreparedSceneRuntime | undefined
-    let stopGrid: (() => void) | undefined
     const abort = new AbortController()
-    const mount = () => {
-      type Input = Parameters<ReturnType<typeof useScene.getState>['setScene']>
-      useScene.getState().setScene(graph.nodes as Input[0], graph.rootNodeIds as Input[1], runtime!.setup)
-    }
-    void prepareSceneRuntime({ projectId: 'fixture', graph, libraryMaterials: pluginFixture.libraryMaterials,
-      signal: abort.signal, onLate: mount,
+    let runtime: PreparedSceneRuntime | undefined
+    void prepareSceneRuntime({ projectId: 'fixture', graph, libraryMaterials,
+      signal: abort.signal, onLate: () => setRevision((value) => value + 1),
     }).then((prepared) => {
       runtime = prepared
       if (abort.signal.aborted) { prepared.dispose(); return }
       probe.prepared = prepared
-      mount()
-      stopGrid = initSpatialGridSync()
-      const viewer = useViewer.getState()
-      viewer.resetSelection()
-      viewer.setCameraMode('perspective')
-      viewer.setLevelMode('stacked')
-      viewer.setWallMode('up')
-      viewer.setShowGrid(false)
-      viewer.setShowMeasurements(false)
-      viewer.setTextures(textures)
       setLoaded(true)
     }).catch((error: unknown) => { if (!abort.signal.aborted) setError(error) })
-    return () => { abort.abort(); stopGrid?.(); runtime?.dispose() }
+    return () => { abort.abort(); runtime?.dispose() }
   }, [])
   if (error) return <main role="alert">{String(error)}</main>
-  return <main className="relative h-full" data-scene-ready={ready}>
-    {loaded && <Viewer daylight={false} defaultRender={{ shading: 'rendered', textures }}
-      disablePostFx onRenderError={setError} onSceneReadyChange={setReady} renderContext="viewer"
-      sceneReadyKey="s2-runtime-fixture" selectionManager="custom" useBvh={false}>
-      <OrbitControls makeDefault target={[3, 0, 0]} />
-      <SceneProbe />
-    </Viewer>}
-    <p className="absolute bottom-4 left-4" role="status">{ready ? 'Runtime fixture ready' : 'Building runtime fixture…'}</p>
-  </main>
+  return loaded ? <FixtureViewer key={revision} graph={graph} sceneKey={`runtime:${revision}`} textures={textures}>
+    <SceneProbe />
+  </FixtureViewer> : <main>Preparing runtime…</main>
 }
 
 createRoot(document.getElementById('root')!).render(<RuntimeFixture />)

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import type { Page } from '@playwright/test'
 import type { SceneResponse } from '../src/pascal'
 
-const graph = JSON.parse(readFileSync(new URL('./fixtures/live-scene.json', import.meta.url), 'utf8')) as SceneResponse['graph']
+import { liveFixture as graph } from './fixtures/scenes'
 
 export const ISSUER = 'https://editor.pascal.app'
 export const PROJECT = 'fixture-house'

@@ -1,16 +1,19 @@
 # Pascal viewer scaffold
 
-S1 + S2 of the Pascal template: a standalone Vite page that renders a small local scene using
-`@pascal-app/{core,viewer,nodes}@1.1.2`. It currently opens the fixture for every URL. Project
-reads, hybrid baked/live assembly and hosted viewer chrome belong to later slices. S2 provides
-the runtime API and plugin allowlist for that assembly, exercised through a separate test entry.
+The project data flow and render runtime are integrated on
+`@pascal-app/{core,viewer,nodes}@1.1.2`. Open `/?project=<id>` (or set
+`VITE_PASCAL_PROJECT_ID`). Access, handoff, bake download/renewal, allowlisted plugins,
+library materials and read-only artifacts are prepared before mounting the resolved graph.
+Rendering still uses the scaffold's simple viewer and drei `OrbitControls`. Ready bakes are
+downloaded into blob URLs, but hybrid GLB assembly awaits the next public camera-controls
+release; both source modes currently display the resolved graph live.
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Drag to orbit and scroll to zoom. The fixture is a reduced copy of the public editor's
+Drag to orbit and scroll to zoom. The offline test fixture is a reduced copy of the public editor's
 `fixtures/viewer-live/scene.json`: site, building, level, four walls and one zone, with no remote
 assets. It uses the public drei `OrbitControls`; the hosted camera/opening-camera components
 await a later viewer/ui release. The fixture disables textures, daylight and post-processing
@@ -32,25 +35,26 @@ hosting extensions and budgets: 20 MiB per file, 90 MiB total, 1,500 files. Vite
 chunking is sufficient; assets keep their default content-hashed names.
 
 The six public plugins are pinned to Community's exact commits in the runtime allowlist. They
-are not loaded by the S1 fixture. `.npmrc` uses `legacy-peer-deps` because the plugins require
+load only when their enabled kinds occur in the resolved graph. `.npmrc` uses `legacy-peer-deps` because the plugins require
 editor peers and several still declare core/viewer `<1`. Render peers are explicit dependencies.
 The trees loader uses a compiler-only paths shim (`src/runtime/trees-render.d.ts`):
 its preset thumbnails assume Next image objects, while Vite imports URLs. The other five render
-entries typecheck directly with `vite/client`. TypeScript's unused-local/parameter checks are off
-because the pinned third-party TS sources contain unused declarations; strict typing stays on.
+entries typecheck directly with `vite/client`. TypeScript's unused-local/parameter checks are enabled. TypeScript 7 has no per-directory
+unused option and still checks imported plugin TS despite `exclude`. `npm run typecheck` runs
+the compiler and filters only unused-symbol diagnostics under `node_modules`; every template
+diagnostic and all other dependency type errors remain failures.
 Never patch installed plugin source or import a package
 name supplied by a scene graph. Trees remains opt-in (`VITE_PASCAL_PLUGIN_TREES=0`).
 
-The public build-time variables in `.env.example` reserve the project's API/assets origin,
-default project, source mode, trees flag and bake-poll flag for the later runtime. `config.ts`
-also parses project/URL flags; the S1 page does not apply them. Only system light/dark mode is
-active now. Never put a key or token into `VITE_*` variables. On Pascal hosting keep the API
+The public build-time variables in `.env.example` configure the API/assets origin, default
+project, source mode, trees flag and optional bake polling. URL chrome/camera flags remain
+reserved for the later assembly. System light/dark mode is active. Never put a key or token into `VITE_*` variables. On Pascal hosting keep the API
 origin `https://editor.pascal.app`; its header CSP blocks arbitrary asset/API origins regardless
 of this page's meta policy. A meta policy cannot set `frame-ancestors`.
 
 `src/pascal/` is byte-identical to listing's standalone API/access/handoff client and root CI
 checks that equality. Callback capture and query scrubbing run before React renders; project
-access resolution will be wired in a later slice. See [listing's contract and handoff rules](../listing/AGENTS.md).
+access resolution runs through `useProjectScene` and `projectSceneRuntime`. See [listing's contract and handoff rules](../listing/AGENTS.md).
 
 The 13 viewer sound files and seven control icons are byte-for-byte copies from the public
 editor's `apps/editor/public/`. The fixture configures their same-origin paths but does not
@@ -151,12 +155,15 @@ return null. `put` rejects and `text` returns null: authored script text is edit
 viewers consume compiled artifacts. Artifact 401s propagate as `PascalError('unauthorized')` for
 the access layer to handle; they never silently fall back to anonymous reads.
 
-`npm run test:e2e` builds with `--mode runtime-test`, adding `tests/runtime.html` and a build
-manifest only for smoke tests. This exercises pool geometry, chunk requests, missing kinds,
-library materials, artifact redirects/cleanup and loader deadlines alongside the original
-offline smoke. The default `npm run build` excludes both the harness and its test hooks; until
-the assembly imports this API, it still builds the S1 fixture. For manual runtime inspection,
-run `npm run dev` and open `/tests/runtime.html?pool=1&unknown=1` (never deployed).
-Use `PASCAL_TEST_PORT=4182 npm run test:e2e` when another worktree is testing on port 4180.
-The test runner binds IPv4 explicitly and starts its own server so it cannot reuse another
-worktree's build. Rebuild normally before deployment.
+`npm run test:e2e` builds with `--mode runtime-test`, adding `tests/runtime.html`,
+`tests/fixtures/hook.html`, an artifact redirect target and a manifest only for tests. App,
+runtime and hook tests all use the same preview server, configured with `PASCAL_TEST_PORT`
+(default 4180). No separate development server is started. Tests cover pool geometry and lazy
+chunk requests through App, materials, missing kinds, artifact redirects/cleanup, loader
+deadlines, access/handoff, bake renewal and hook cancellation. API responses and external
+assets are mocked in the offline rendering smokes. The pool fixture extends the common live
+graph; App and runtime tests share the scaffold renderer and pixel helper.
+
+The normal `npm run build` includes no test modules or harness entries, enforced by `check`.
+Use `PASCAL_TEST_PORT=4182 npm run test:e2e` to isolate another worktree. Rebuild normally before
+`check` and deployment; `check` rejects a runtime-test build.

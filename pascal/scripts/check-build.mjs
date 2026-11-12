@@ -34,15 +34,19 @@ async function walk(relative = '') {
 await walk()
 const total = files.reduce((sum, file) => sum + file.bytes, 0)
 if (!files.some((file) => file.path === 'index.html')) failures.push('Missing dist/index.html')
+if (files.some((file) => file.path.startsWith('tests/') || file.path === 'runtime-manifest.json')) {
+  failures.push('Test harness output in dist; rebuild with npm run build before deployment')
+}
 if (files.length > 1500) failures.push('Build exceeds 1,500 files')
 if (total > 90 * MiB) failures.push('Build exceeds 90 MiB total')
 
 const report = JSON.parse(await readFile(resolve(dist, 'build-boundary.json'), 'utf8'))
-if (!(report.moduleCount > 0) || !Array.isArray(report.packages) || !Array.isArray(report.entryPluginModules)) {
+if (!(report.moduleCount > 0) || !Array.isArray(report.packages) || !Array.isArray(report.entryPluginModules) || !Array.isArray(report.testModules)) {
   failures.push('Missing or invalid build boundary report; rebuild dist')
 } else {
   for (const name of report.packages.filter(forbidden)) failures.push(`Forbidden bundled package: ${name}`)
   if (report.entryPluginModules.length) failures.push(`Plugin code in entry chunk: ${report.entryPluginModules.join(', ')}`)
+  if (report.testModules.length) failures.push(`Test modules in production build: ${report.testModules.join(', ')}`)
 }
 
 // Check the installed tree and lockfile too, even for packages that were tree-shaken away.
@@ -75,5 +79,5 @@ if (failures.length) {
   console.error(failures.join('\n'))
   process.exitCode = 1
 } else {
-  console.log('Passed: 20 MiB/file, 90 MiB total, 1,500 files, hosting extensions and package boundary')
+  console.log('Passed: 20 MiB/file, 90 MiB total, 1,500 files, hosting extensions, package boundary and no test harnesses')
 }

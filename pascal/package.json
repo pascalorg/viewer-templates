@@ -45,7 +45,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node scripts/typecheck.mjs",
     "check": "node scripts/check-build.mjs",
     "test:e2e": "npm run build -- --mode runtime-test && playwright test",
     "deploy:dry": "npx @pascal-app/cli@1.1.2 viewer deploy dist --viewer $VIEWER_ID --dry-run"

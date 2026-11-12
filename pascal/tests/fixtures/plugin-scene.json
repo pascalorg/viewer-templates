@@ -1,216 +1,25 @@
 {
-  "nodes": {
-    "site_fixture": {
-      "object": "node",
-      "id": "site_fixture",
-      "type": "site",
-      "parentId": null,
-      "visible": true,
-      "polygon": {
-        "type": "polygon",
-        "points": [
-          [
-            -15,
-            -15
-          ],
-          [
-            15,
-            -15
-          ],
-          [
-            15,
-            15
-          ],
-          [
-            -15,
-            15
-          ]
-        ]
-      },
-      "children": [
-        "building_fixture"
-      ]
-    },
-    "building_fixture": {
-      "object": "node",
-      "id": "building_fixture",
-      "type": "building",
-      "parentId": "site_fixture",
-      "visible": true,
-      "children": [
-        "level_fixture"
-      ],
-      "position": [
-        0,
-        0,
-        0
-      ],
-      "rotation": [
-        0,
-        0,
-        0
-      ]
-    },
-    "level_fixture": {
-      "object": "node",
-      "id": "level_fixture",
-      "type": "level",
-      "parentId": "building_fixture",
-      "visible": true,
-      "children": [
-        "wall_south",
-        "wall_east",
-        "wall_north",
-        "wall_west",
-        "zone_fixture",
-        "pool_fixture"
-      ],
-      "level": 0,
-      "baseElevation": 0,
-      "height": 3
-    },
-    "wall_south": {
-      "object": "node",
-      "id": "wall_south",
-      "type": "wall",
-      "parentId": "level_fixture",
-      "visible": true,
-      "children": [],
-      "start": [
-        -3,
-        -2
-      ],
-      "end": [
-        3,
-        -2
-      ],
-      "frontSide": "unknown",
-      "backSide": "unknown",
-      "materialPreset": "library:mtl_s2fixture"
-    },
-    "wall_east": {
-      "object": "node",
-      "id": "wall_east",
-      "type": "wall",
-      "parentId": "level_fixture",
-      "visible": true,
-      "children": [],
-      "start": [
-        3,
-        -2
-      ],
-      "end": [
-        3,
-        2
-      ],
-      "frontSide": "unknown",
-      "backSide": "unknown"
-    },
-    "wall_north": {
-      "object": "node",
-      "id": "wall_north",
-      "type": "wall",
-      "parentId": "level_fixture",
-      "visible": true,
-      "children": [],
-      "start": [
-        3,
-        2
-      ],
-      "end": [
-        -3,
-        2
-      ],
-      "frontSide": "unknown",
-      "backSide": "unknown"
-    },
-    "wall_west": {
-      "object": "node",
-      "id": "wall_west",
-      "type": "wall",
-      "parentId": "level_fixture",
-      "visible": true,
-      "children": [],
-      "start": [
-        -3,
-        2
-      ],
-      "end": [
-        -3,
-        -2
-      ],
-      "frontSide": "unknown",
-      "backSide": "unknown"
-    },
-    "zone_fixture": {
-      "object": "node",
-      "id": "zone_fixture",
-      "type": "zone",
-      "name": "Live room",
-      "parentId": "level_fixture",
-      "visible": true,
-      "polygon": [
-        [
-          -2.8,
-          -1.8
-        ],
-        [
-          2.8,
-          -1.8
-        ],
-        [
-          2.8,
-          1.8
-        ],
-        [
-          -2.8,
-          1.8
-        ]
-      ],
-      "holes": [],
-      "autoFromWalls": false,
-      "boundaryWallIds": [],
-      "boundarySeparatorIds": [],
-      "spaceRole": "generic",
-      "roomNumber": "",
-      "enclosureStatus": "auto",
-      "floorFinish": "",
-      "wallFinish": "",
-      "ceilingFinish": "",
-      "ceilingHeight": 2.7,
-      "occupancy": "",
-      "clearDimensionPolicy": "none",
-      "color": "#3b82f6"
-    },
-    "pool_fixture": {
-      "object": "node",
-      "id": "pool_fixture",
-      "type": "pool:pool",
-      "parentId": "level_fixture",
-      "visible": true,
-      "children": [],
-      "position": [
-        7,
-        0.2,
-        0
-      ],
-      "rotation": [
-        0,
-        0,
-        0
-      ],
-      "length": 6,
-      "width": 4,
-      "waterQuality": "low"
-    }
+  "pool": {
+    "object": "node",
+    "id": "pool_fixture",
+    "type": "pool:pool",
+    "parentId": "level_fixture",
+    "visible": true,
+    "children": [],
+    "position": [
+      7,
+      0.2,
+      0
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "length": 6,
+    "width": 4,
+    "waterQuality": "low"
   },
-  "rootNodeIds": [
-    "site_fixture"
-  ],
-  "materials": {},
-  "installedPlugins": [
-    "pascal:pool"
-  ],
   "libraryMaterials": [
     {
       "id": "mtl_s2fixture",

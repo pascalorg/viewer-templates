@@ -23,7 +23,7 @@ export type ProjectSceneState =
  * signal lasts for this scene's lifetime; cancel work and suppress global mutations
  * after abort. onLate requests a remount when a plugin arrives after the deadline.
  * Return a disposer for artifact blob URLs/subscriptions; clean partial work on errors.
- * The assembly owns the read-only lease, live setScene/spatial sync, and baked
+ * Preparation owns the read-only lease; the assembly owns live setScene/spatial sync and baked
  * buildGlbInteractiveItems/buildGlbReferenceNodes({scans:true,guides:true})/
  * buildGlbReplaceNodes. The complete graph remains available for plan, rooms and picking.
  */

@@ -11,7 +11,7 @@ for (const status of ['none', 'failed', 'baking', 'ready'] as const) {
   })
 }
 
-test('downloads the ready bake into a blob URL before rendering the fixture', async ({ page, context }) => {
+test('downloads the ready bake into a blob URL before rendering the fixture', async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: 'pascal_session', value: 'must-not-send', url: ISSUER }])
   const calls = await mockPascal(page)
   await page.addInitScript(() => {
@@ -28,7 +28,7 @@ test('downloads the ready bake into a blob URL before rendering the fixture', as
     const url = sessionStorage.getItem('fixture:glb')!
     return { url, bytes: [...new Uint8Array(await (await fetch(url)).arrayBuffer())] }
   })
-  expect(blob.url).toMatch(/^blob:http:\/\/localhost:4180\//)
+  expect(blob.url.startsWith(`blob:${new URL(baseURL!).origin}/`)).toBe(true)
   expect(Buffer.from(blob.bytes)).toEqual(glb)
   expect(calls.scene).toBe(1)
   expect(calls.glb).toBe(1)
@@ -95,7 +95,28 @@ test('routes a 401 during signed URL renewal through the handoff', async ({ page
   expect(calls.authorization).toEqual([`Bearer ${TOKEN}`, `Bearer ${TOKEN}`])
 })
 
-test('captures and scrubs the callback before exchange, then resolves its project', async ({ page }) => {
+test('App prepares private artifacts with the scene credential and routes a rejection through access', async ({ page }) => {
+  const scene = liveScene()
+  scene.graph = structuredClone(scene.graph)
+  const hash = 'a'.repeat(64)
+  scene.graph.nodes.wall_south!.compiledArtifact = `artifact://${hash}`
+  const calls = await mockPascal(page, () => ({ body: scene }))
+  await seedCredential(page)
+  const artifactReads: (string | undefined)[] = []
+  await page.route(`${ISSUER}/api/projects/${PROJECT}/artifacts/${hash}`, (route) => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    artifactReads.push(route.request().headers().authorization)
+    return route.fulfill({ status: 401, headers: cors, json: { error: 'unauthorized' } })
+  })
+  await page.goto(`/?project=${PROJECT}`)
+  await expect(page.getByRole('heading', { name: 'Reopen from Pascal' })).toBeVisible()
+  await expect(page.locator('canvas')).toHaveCount(0)
+  expect(artifactReads).toEqual([`Bearer ${TOKEN}`])
+  expect(calls.scene).toBe(1)
+})
+
+test('captures and scrubs the callback before exchange, then resolves its project', async ({ page, baseURL }) => {
+  const callbackUrl = new URL('/', baseURL).href
   const calls = await mockPascal(page, () => ({ body: liveScene() }))
   const state = 's'.repeat(43)
   const verifier = 'v'.repeat(43)
@@ -106,14 +127,14 @@ test('captures and scrubs the callback before exchange, then resolves its projec
       returnPath: `/?project=${project}&viewer=${viewer}&access=share` }))
   }, { issuer: ISSUER, project: PROJECT, viewer: VIEWER, state, verifier })
   await page.route('**/api/viewers/resolve?*', (route) => route.fulfill({ headers: cors, json: {
-    viewer_id: VIEWER, redirect_uri: 'http://localhost:4180/', availability: 'available',
+    viewer_id: VIEWER, redirect_uri: callbackUrl, availability: 'available',
   } }))
   let exchanges = 0
   await page.route('**/api/viewer-handoff/exchange', async (route) => {
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
     exchanges++
     expect(await page.evaluate(() => location.search)).not.toMatch(/code=|state=|iss=/)
-    expect(route.request().postDataJSON()).toEqual({ code, code_verifier: verifier, viewer: VIEWER, redirect_uri: 'http://localhost:4180/' })
+    expect(route.request().postDataJSON()).toEqual({ code, code_verifier: verifier, viewer: VIEWER, redirect_uri: callbackUrl })
     await route.fulfill({ headers: cors, json: { access_token: TOKEN, token_type: 'Bearer',
       expires_at: new Date(Date.now() + 3_600_000).toISOString(), project_id: PROJECT, viewer_id: VIEWER, revision: 'published' } })
   })
@@ -121,7 +142,7 @@ test('captures and scrubs the callback before exchange, then resolves its projec
   await expect(page.locator('main[data-source="live"][data-scene-ready="true"]')).toBeVisible({ timeout: 60_000 })
   expect(exchanges).toBe(1)
   expect(calls.authorization).toEqual([`Bearer ${TOKEN}`])
-  expect(page.url()).toBe(`http://localhost:4180/?project=${PROJECT}&viewer=${VIEWER}&access=share`)
+  expect(page.url()).toBe(`${callbackUrl}?project=${PROJECT}&viewer=${VIEWER}&access=share`)
 })
 
 test('a failed download renews only once and provides retry', async ({ page }) => {
