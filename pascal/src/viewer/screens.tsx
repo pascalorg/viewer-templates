@@ -1,3 +1,4 @@
+import { SceneLoader } from '@pascal-app/viewer/ui'
 import type { ReactNode } from 'react'
 import type { PascalError, SceneResponse } from '../pascal'
 
@@ -21,11 +22,13 @@ export function RetryButton({ onRetry }: { onRetry: () => void }) {
     onClick={onRetry} type="button">Try again</button>
 }
 
+/** The hosted viewer's full-screen loader while the project is read and prepared. */
 export function LoadingScreen({ opening = false, progress }: { opening?: boolean; progress?: number | null }) {
-  return <Status state={opening ? 'opening' : 'loading'}
-    title={opening ? 'Opening from Pascal…' : 'Loading project…'}>
-    <p role="status">{progress == null ? 'Please wait.' : `Downloading 3D file: ${Math.round(progress * 100)}%`}</p>
-  </Status>
+  return <main className="h-full" data-state={opening ? 'opening' : 'loading'}>
+    <SceneLoader className="bg-background" fullScreen />
+    <p className="sr-only" role="status">{opening ? 'Opening from Pascal…'
+      : progress == null ? 'Loading project…' : `Downloading 3D file: ${Math.round(progress * 100)}%`}</p>
+  </main>
 }
 
 export function NeedsAccessScreen({ access, baseUrl, projectId }: {

@@ -1,0 +1,81 @@
+{
+  "id": "door_fixture",
+  "type": "door",
+  "name": "Front door",
+  "side": "front",
+  "width": 1.2,
+  "handle": true,
+  "height": 2.250365352120174,
+  "object": "node",
+  "wallId": "wall_north",
+  "visible": true,
+  "doorType": "french",
+  "panicBar": false,
+  "parentId": "wall_north",
+  "position": [
+    3,
+    1.125182676060087,
+    0
+  ],
+  "rotation": [
+    0,
+    0,
+    0
+  ],
+  "segments": [
+    {
+      "type": "glass",
+      "panelDepth": 0.01,
+      "panelInset": 0.04,
+      "heightRatio": 0.76,
+      "columnRatios": [
+        1,
+        1
+      ],
+      "dividerThickness": 0.025
+    },
+    {
+      "type": "panel",
+      "panelDepth": 0.012,
+      "panelInset": 0.035,
+      "heightRatio": 0.24,
+      "columnRatios": [
+        1
+      ],
+      "dividerThickness": 0.03
+    }
+  ],
+  "leafCount": 2,
+  "threshold": true,
+  "archHeight": 0.45,
+  "doorCloser": false,
+  "frameDepth": 0.07,
+  "handleSide": "right",
+  "hingesSide": "left",
+  "swingAngle": 0,
+  "trackStyle": "none",
+  "openingKind": "door",
+  "cornerRadius": 0.15,
+  "doorCategory": "interior",
+  "handleHeight": 1.125182676060087,
+  "openingShape": "rectangle",
+  "contentPadding": [
+    0.045,
+    0.055
+  ],
+  "frameThickness": 0.05,
+  "operationState": 0,
+  "panicBarHeight": 1,
+  "slideDirection": "left",
+  "swingDirection": "inward",
+  "openingTopRadii": [
+    0.15,
+    0.15
+  ],
+  "thresholdHeight": 0.02,
+  "constructionType": "framed",
+  "garagePanelCount": 4,
+  "openingRadiusMode": "all",
+  "dimensionReference": "nominal",
+  "openingRevealRadius": 0.025
+}

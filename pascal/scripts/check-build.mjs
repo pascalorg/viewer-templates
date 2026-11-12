@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = resolve(root, 'dist')
 const MiB = 1024 * 1024
-// Match @pascal-app/cli 1.1.2; keep stricter budgets to leave hosting headroom.
+// Match @pascal-app/cli 1.1.3; keep stricter budgets to leave hosting headroom.
 const extensions = new Set('html js mjs css json wasm map svg png jpg jpeg webp avif gif ico txt woff woff2 ttf glb gltf bin ktx2 hdr mp3 ogg wav mp4 webm'.split(' '))
 const files = []
 const failures = []

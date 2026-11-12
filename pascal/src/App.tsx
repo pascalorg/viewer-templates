@@ -3,7 +3,7 @@ import { PASCAL_BASE_URL, projectIdFromLocation } from './config'
 import { hasHandoffCallback } from './pascal/handoff'
 import { projectSceneRuntime } from './runtime/project-scene'
 import { useProjectScene } from './useProjectScene'
-import { FixtureViewer } from './viewer/FixtureViewer'
+import { ProjectViewer } from './viewer/ProjectViewer'
 import { ErrorScreen, LoadingScreen, NeedsAccessScreen, NoFileScreen, Status } from './viewer/screens'
 
 export function App() {
@@ -25,10 +25,10 @@ function Project({ projectId }: { projectId: string }) {
     case 'no-file': return <NoFileScreen scene={state.scene} onRetry={reload} />
     case 'live':
     case 'baked': {
-      const sceneKey = `${state.kind}:${state.scene.revision.modelId}:${state.scene.revision.version}:${state.runtimeRevision}`
-      return <FixtureViewer key={sceneKey} sceneKey={sceneKey}
-        graph={state.scene.graph} source={state.kind}
-        title={state.scene.project.name || 'Pascal viewer'} onRetry={reload} />
+      // A late plugin bumps runtimeRevision without remounting; the viewer rebuilds what it draws.
+      const glbUrl = state.kind === 'baked' ? state.url : null
+      return <ProjectViewer key={`${state.scene.revision.modelId}:${state.scene.revision.version}:${glbUrl}`}
+        scene={state.scene} glbUrl={glbUrl} runtimeRevision={state.runtimeRevision} />
     }
   }
 }

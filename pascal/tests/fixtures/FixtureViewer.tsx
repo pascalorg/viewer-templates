@@ -3,11 +3,11 @@ import { useViewer, Viewer } from '@pascal-app/viewer'
 import { SceneLoader } from '@pascal-app/viewer/ui'
 import { OrbitControls } from '@react-three/drei'
 import { useEffect, useState, type ReactNode } from 'react'
-import type { SceneGraph } from '../pascal/contract'
-import { publishedSceneSetup } from '../runtime/plugins'
-import { RetryButton, Status } from './screens'
+import type { SceneGraph } from '../../src/pascal/contract'
+import { publishedSceneSetup } from '../../src/runtime/plugins'
+import { RetryButton, Status } from '../../src/viewer/screens'
 
-/** Simple scaffold renderer, pending the public camera controls and hybrid assembly. */
+/** Test-only renderer for runtime checks: the graph under plain orbit controls, without the viewer chrome. */
 export function FixtureViewer({ graph, sceneKey, title = 'Pascal viewer', source, textures = false, children, onRetry }: {
   graph: SceneGraph
   sceneKey: string

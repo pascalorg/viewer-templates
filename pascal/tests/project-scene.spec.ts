@@ -6,7 +6,7 @@ for (const status of ['none', 'failed', 'baking', 'ready'] as const) {
     const calls = await mockPascal(page, () => ({ body: liveScene(status) }))
     await page.goto(`/?project=${PROJECT}`)
     await expect(page.locator('main[data-source="live"][data-scene-ready="true"]')).toBeVisible({ timeout: 60_000 })
-    await expect(page.getByRole('heading', { name: 'Fixture house' })).toBeVisible()
+    await expect(page.getByText('Fixture house', { exact: true })).toBeVisible()
     expect(calls.glb).toBe(0)
   })
 }

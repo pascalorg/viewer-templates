@@ -21,12 +21,15 @@ export function projectIdFromLocation(search = window.location.search): string |
     import.meta.env.VITE_PASCAL_PROJECT_ID?.trim() || null
 }
 
+/** The hosted viewer's URL flags; "1", "true" and "yes" turn a flag on. */
 export function viewerFlagsFromLocation(search = window.location.search) {
   const params = new URLSearchParams(search)
+  const on = (name: string) => ['1', 'true', 'yes'].includes(params.get(name) ?? '')
   return {
-    embed: params.get('embed') === '1',
-    hideHeader: params.get('hideHeader') === '1',
-    hideBottomBar: params.get('hideBottomBar') === '1',
+    embed: on('embed'),
+    hideHeader: on('hideHeader'),
+    hideBottomBar: on('hideBottomBar'),
+    /** `px,py,pz,tx,ty,tz[,fov]` or `saved`; anything else opens on the default view. */
     camera: params.get('camera'),
   }
 }

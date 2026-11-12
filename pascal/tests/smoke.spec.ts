@@ -3,14 +3,17 @@ import { expect, test } from '@playwright/test'
 import { liveScene, mockPascal, PROJECT } from './pascal-mocks'
 import { libraryMaterials, pluginFixture } from './fixtures/scenes'
 
+// The full viewer (post-processing, environment) is slow under software rendering.
+test.setTimeout(90_000)
+
 test('the public Viewer builds and renders the local live scene', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   // API and external assets are intercepted; this graph needs no network assets.
   await mockPascal(page, () => ({ body: liveScene() }))
   await page.goto(`/?project=${PROJECT}`)
-  await expect(page.locator('main[data-scene-ready=true]')).toBeVisible({ timeout: 60_000 })
-  await expect(page.getByRole('status')).toContainText('Live fixture ready')
+  await expect(page.locator('main[data-source=live][data-scene-ready=true]')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText('Fixture house', { exact: true })).toBeVisible()
   const canvas = page.locator('canvas')
   await expect(canvas).toBeVisible()
   expect(await renderedColorCount(page.locator('canvas'))).toBeGreaterThan(30)
@@ -27,7 +30,7 @@ test('App renders a mocked live pool project and loads its plugin only on demand
   page.on('request', (request) => requests.push(new URL(request.url()).pathname))
   page.on('pageerror', (error) => errors.push(error.message))
   const graph = structuredClone(pluginFixture)
-  // Start without a pool; add it at the scaffold camera's target on the next visit.
+  // Start without a pool; add it in the middle of the room on the next visit.
   const pool = graph.nodes.pool_fixture!
   pool.position = [0, 0.2, 0]
   delete graph.nodes.pool_fixture

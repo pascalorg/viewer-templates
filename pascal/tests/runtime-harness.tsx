@@ -8,7 +8,7 @@ import type { SceneGraph } from '../src/pascal/contract'
 import { prepareSceneRuntime, type PreparedSceneRuntime } from '../src/runtime/bootstrap'
 import { createProjectArtifactStore, referencedArtifactHashes } from '../src/runtime/artifacts'
 import { neededPlugins, pluginInstallStateOf, warnUnknownKinds } from '../src/runtime/plugins'
-import { FixtureViewer } from '../src/viewer/FixtureViewer'
+import { FixtureViewer } from './fixtures/FixtureViewer'
 import { liveFixture, pluginFixture, libraryMaterials } from './fixtures/scenes'
 import '../src/styles.css'
 
