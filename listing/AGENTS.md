@@ -187,6 +187,25 @@ minted for. Revoking the API key, or its owner losing manage access, stops it.
 - **Cloudflare Pages**: build command `npm run build`, output directory `dist`, variables under
   Settings → Variables (they are read at build time). From the CLI:
   `npm run build && npx wrangler pages deploy dist`.
+- **Pascal**: needs `@pascal-app/cli` newer than 1.1.1. Register under Settings → Viewers →
+  **Host on Pascal**; Pascal assigns `https://<slug>.pascal-viewer.app`, registers the `<origin>/`
+  callback and verifies the origin on first deploy (skip the challenge in Open from Pascal). Then:
+
+  ```bash
+  npm run build
+  npx @pascal-app/cli viewer deploy dist --viewer <viewer id> --dry-run   # local checks; no key, no network
+  PASCAL_API_KEY='sk_live_...' npx @pascal-app/cli viewer deploy dist --viewer <viewer id> --json
+  ```
+
+  Fix everything the dry run lists before deploying: hidden files, folders and symlinks are
+  skipped (except top-level `.well-known/`); other symlinks and non-allowlisted extensions are
+  errors. The key must manage the viewer's workspace; keep it in the shell, never in `.env`,
+  `VITE_*` or the repo. The deploy ends with `Live at: https://<slug>.pascal-viewer.app/`;
+  `--json` prints `schemaVersion`, `viewerId`, `deploymentId`, `status`, `fileCount`,
+  `totalBytes`, `skipped` and `url` (the live address). A failed deploy leaves the previous build
+  live; rerun it to start a fresh deployment. Exit code 75 means retry later. Pascal's header CSP limits `connect-src` to the site, `editor.pascal.app`, Supabase
+  and the decoder CDNs, so `VITE_PASCAL_TOKEN_URL` or another `VITE_PASCAL_BASE_URL` host fails
+  there; use Open from Pascal for private projects.
 
 The CSP ships as a `<meta>` tag. A meta policy cannot set `frame-ancestors`; if you need to control
 who embeds your page, send that as a header (`vercel.json` headers, or `public/_headers` on

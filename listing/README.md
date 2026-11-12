@@ -31,6 +31,34 @@ The live view uses the runtime's untextured studio setup; relative assets resolv
 | `npm run test:e2e` | Builds, then runs the Playwright smoke against a mocked API. |
 | `npm run fixture` | Regenerates the test fixtures. |
 
+## Deploy to Pascal
+
+Pascal can host the built site at `https://<slug>.pascal-viewer.app`. This uses
+`pascal viewer deploy`, in the next `@pascal-app/cli` release after 1.1.1.
+
+1. Register the viewer in Pascal under Settings → Viewers → **Host on Pascal**. Pascal assigns
+   the origin, verifies it on the first deploy and registers the root callback (`<origin>/`)
+   this template uses.
+2. Set any `VITE_*` variables, then run `npm run build`. They're read at build time.
+3. Check the build, then deploy it with an API key that can manage the viewer's workspace:
+
+   ```bash
+   npx @pascal-app/cli viewer deploy dist --viewer <viewer id> --dry-run
+   PASCAL_API_KEY='sk_live_...' npx @pascal-app/cli viewer deploy dist --viewer <viewer id>
+   ```
+
+   The dry run lists skipped hidden files and anything that would stop the deploy. The deploy
+   ends with `Live at: https://<slug>.pascal-viewer.app/`.
+
+4. Bind a published project to the viewer, then open it from Pascal or create a share link
+   pinned to it.
+
+Keep the key in your shell, never in `.env`. Pascal hosting sends its own Content-Security-Policy,
+which allows connections only to the site, `editor.pascal.app`, Supabase storage and the decoder
+CDNs. A `VITE_PASCAL_TOKEN_URL` or `VITE_PASCAL_BASE_URL` on another host is blocked there, so
+private projects use Open from Pascal. Vercel, Cloudflare Pages and other static hosts work as
+before; see [AGENTS.md](AGENTS.md#deploy).
+
 [`AGENTS.md`](AGENTS.md) covers the API contract, what the 3D file contains, deployment,
 customisation and the rules to keep (start with: never put a Pascal API key in the browser).
 
