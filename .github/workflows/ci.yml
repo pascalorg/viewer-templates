@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        template: [listing]
+        template: [listing, pascal]
     defaults:
       run:
         working-directory: ${{ matrix.template }}
@@ -25,5 +25,31 @@ jobs:
           cache-dependency-path: ${{ matrix.template }}/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run build
+        if: matrix.template == 'pascal'
+      - run: npm run check
+        if: matrix.template == 'pascal'
+      # npm ls exits 1 for an empty filtered list; validate the JSON explicitly.
+      - name: Verify editor and Next are absent
+        if: matrix.template == 'pascal'
+        run: |
+          node --input-type=module <<'JS'
+          import { spawnSync } from 'node:child_process'
+          const result = spawnSync('npm', ['ls', '@pascal-app/editor', 'next', '--all', '--json'], { encoding: 'utf8' })
+          console.log(result.stdout)
+          const tree = JSON.parse(result.stdout)
+          if (result.error || tree.error || tree.errors || Object.keys(tree.dependencies || {}).length || ![0, 1].includes(result.status)) process.exit(1)
+          JS
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      - run: npm run deploy:dry
+        if: matrix.template == 'pascal'
+        env:
+          VIEWER_ID: viewer_dryrun
+
+  shared-client:
+    name: Identical Pascal API clients
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: diff -r listing/src/pascal pascal/src/pascal
