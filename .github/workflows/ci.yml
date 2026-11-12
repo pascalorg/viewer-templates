@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Runs the pascal template's browser tests too; they are too slow for every pull request.
+  workflow_dispatch:
 
 jobs:
   template:
@@ -40,8 +42,12 @@ jobs:
           const tree = JSON.parse(result.stdout)
           if (result.error || tree.error || tree.errors || Object.keys(tree.dependencies || {}).length || ![0, 1].includes(result.status)) process.exit(1)
           JS
+      # pascal renders full 3D scenes; without a GPU that takes minutes, so its browser tests run
+      # on the author's machine before a pull request and here only on a manual run.
       - run: npx playwright install --with-deps chromium
+        if: matrix.template == 'listing' || github.event_name == 'workflow_dispatch'
       - run: npm run test:e2e
+        if: matrix.template == 'listing' || github.event_name == 'workflow_dispatch'
       - run: npm run deploy:dry
         if: matrix.template == 'pascal'
         env:

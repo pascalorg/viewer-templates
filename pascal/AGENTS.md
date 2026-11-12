@@ -76,6 +76,10 @@ npm run build                     # test:e2e leaves a test build in dist/; check
 VIEWER_ID=viewer_dryrun npm run deploy:dry
 ```
 
+Pull request CI does not run the browser tests for this template: they render full 3D scenes and
+take minutes without a GPU. Run `npm run test:e2e` on your machine before opening a pull request;
+a maintainer can also run them from the CI workflow's "Run workflow" button.
+
 `npm run test:e2e` builds with `--mode runtime-test`, which adds the harness pages under
 `tests/`, and serves that build with `vite preview` on `PASCAL_TEST_PORT` (default 4180). The
 tests mock the scene read, storage and external assets, so they need no network and no Pascal
