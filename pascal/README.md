@@ -1,7 +1,7 @@
 # Pascal viewer
 
 Pascal's hosted viewer (`editor.pascal.app/viewer/<id>`) rebuilt on
-`@pascal-app/{core,viewer,nodes}@1.1.3`. Open `/?project=<id>` (or set
+`@pascal-app/{core,viewer,nodes}@1.1.4`. Open `/?project=<id>` (or set
 `VITE_PASCAL_PROJECT_ID`). Access, handoff, bake download/renewal, allowlisted plugins,
 library materials and read-only artifacts are prepared before the scene mounts.
 `src/viewer/ProjectViewer.tsx` is the assembly, shaped like the hosted one: with a ready bake
@@ -71,7 +71,7 @@ one console warning per kind and no on-screen notice.
 To validate a static build with Pascal's CLI (no key or upload):
 
 ```bash
-npx @pascal-app/cli@1.1.3 viewer deploy dist --viewer viewer_Abc123DEF456ghi7 --dry-run
+npx @pascal-app/cli@1.1.4 viewer deploy dist --viewer viewer_Abc123DEF456ghi7 --dry-run
 ```
 
 For an actual deployment follow [listing's deployment guide](../listing/README.md#deploy).

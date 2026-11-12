@@ -40,7 +40,7 @@ diagnostics from raw TS in node_modules because TypeScript has no per-directory 
 Template diagnostics and all other dependency errors still fail. No installed plugin source patches. Remove `.npmrc` legacy peer resolution
 after upstream makes editor optional and widens core/viewer ranges at the chosen pins.
 
-Preserve the boundary against `@pascal-app/editor` and `next`, the three Pascal 1.1.3 pins and the CLI pin in `deploy:dry` (bump
+Preserve the boundary against `@pascal-app/editor` and `next`, the three Pascal 1.1.4 pins and the CLI pin in `deploy:dry` (bump
 together), and the singleton dedupe list. Keep content-hashed assets and self-hosted decoders.
 `check` budgets are 20 MiB/file, 90 MiB total and 1,500 files. Pascal's header CSP restricts
 origins even if a local meta policy is widened. Do not add remote scripts.
