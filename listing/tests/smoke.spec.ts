@@ -6,6 +6,14 @@ import { cors, GLB_URL, mockPascal, sceneBody } from './pascal-mocks'
 const fixtures = new URL('./fixtures/', import.meta.url)
 const liveGraph = JSON.parse(readFileSync(new URL('live-scene.json', fixtures), 'utf8'))
 const cube = readFileSync(new URL('cube.gltf', fixtures))
+
+async function expectBakedReady(page: Page) {
+  // Navigation can finish before the scrubbed callback's dynamic app import. Cold
+  // software WebGL and KTX2 startup also belong to scene readiness, not page load.
+  // Use the live scene's readiness budget; keep ordinary UI assertions at 5 seconds.
+  await expect(page.locator('main[data-state="ready"]')).toBeVisible({ timeout: 20_000 })
+}
+
 /** Distinct colours in the rendered canvas: 1 for an empty clear colour, many for a model. */
 async function canvasColours(page: Page) {
   const png = await page.locator('canvas').screenshot()
@@ -34,7 +42,7 @@ test('renders the baked model and lists its floors', async ({ page }) => {
   await mockPascal(page)
 
   await page.goto('/?project=fixture-house')
-  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  await expectBakedReady(page)
   await expect(page.getByRole('heading', { name: 'Fixture house' })).toBeVisible()
   await expect(page.locator('canvas')).toBeVisible()
   expect(await canvasColours(page)).toBeGreaterThan(50)
@@ -53,7 +61,7 @@ test('renders the baked model and lists its floors', async ({ page }) => {
 test('names the room under the pointer with its area', async ({ page }) => {
   await mockPascal(page)
   await page.goto('/?project=fixture-house')
-  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  await expectBakedReady(page)
   await page.getByRole('button', { name: 'Ground floor' }).click()
 
   const box = (await page.locator('canvas').boundingBox())!
@@ -73,7 +81,7 @@ test('names the room under the pointer with its area', async ({ page }) => {
 test('opens a door on click and closes it on a second click', async ({ page }) => {
   await mockPascal(page)
   await page.goto('/?project=fixture-house')
-  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  await expectBakedReady(page)
   await page.getByRole('button', { name: 'Ground floor' }).click()
 
   const canvas = page.locator('canvas')
@@ -104,14 +112,14 @@ test('renews an expired 3D file URL by reading the scene again', async ({ page }
     body: sceneBody(n === 1 ? { expiresAt: new Date(Date.now() - 1000).toISOString() } : {}),
   }))
   await page.goto('/?project=fixture-house')
-  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  await expectBakedReady(page)
   expect(calls).toEqual({ scene: 2, glb: 1 })
 })
 
 test('renews once when storage rejects the signed URL', async ({ page }) => {
   const calls = await mockPascal(page, undefined, (n) => (n === 1 ? 400 : 200))
   await page.goto('/?project=fixture-house')
-  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  await expectBakedReady(page)
   expect(calls).toEqual({ scene: 2, glb: 2 })
 })
 
@@ -271,7 +279,7 @@ test('exchanges the callback once, scrubs before exchange and reads with the chi
   const read = page.waitForRequest('**/api/projects/*/scene*')
   const storage = page.waitForRequest(GLB_URL)
   await page.goto(callbackPath)
-  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  await expectBakedReady(page)
   expect((await read).headers()['authorization']).toBe(`Bearer ${TOKEN}`)
   expect((await read).headers()['cookie']).toBeUndefined()
   expect((await storage).headers()['authorization']).toBeUndefined()
@@ -283,7 +291,7 @@ test('exchanges the callback once, scrubs before exchange and reads with the chi
   expect(await page.evaluate(() => localStorage.length)).toBe(0)
   expect(registry.resolve).toBe(1)
   await page.reload()
-  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  await expectBakedReady(page)
   expect(exchange.exchange).toBe(1)
   expect(registry.resolve).toBe(2)
 })
@@ -359,6 +367,6 @@ test('ignores credentials stored for another project and reads public projects a
   await seedCredential(page, { project_id: 'another-project' }, `pascal:credential:${JSON.stringify([ISSUER, VIEWER, 'another-project', origin])}`)
   const read = page.waitForRequest('**/api/projects/*/scene*')
   await page.goto(`/?project=${PROJECT}`)
-  await expect(page.locator('main[data-state="ready"]')).toBeVisible()
+  await expectBakedReady(page)
   expect((await read).headers()['authorization']).toBeUndefined()
 })
