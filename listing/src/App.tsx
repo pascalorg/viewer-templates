@@ -54,30 +54,8 @@ function Listing({ projectId }: { projectId: string }) {
 
   if (state.kind === 'loading') return <Status title="Loading project…" state="loading" />
   if (state.kind === 'opening') return <Status title="Opening from Pascal…" state="opening" />
-  if (state.kind === 'refused') return <Status title="This account can't open this project" state="refused">
-    <p>Another Pascal account may have access.</p>
-    <SignInButton projectId={projectId} />
-  </Status>
-  if (state.kind === 'reopen') {
-    const projectUrl = new URL(
-      projectId ? `/editor/${encodeURIComponent(projectId)}` : '/projects',
-      PASCAL_BASE_URL,
-    ).href
-    return (
-      <Status
-        title={state.access === 'share' ? 'Reopen your share link' : 'Reopen from Pascal'}
-        state="reopen"
-      >
-        {state.access === 'share'
-          ? 'Open the original Pascal share link again to restore access.'
-          : 'Open this project from Pascal again to restore access.'}
-        {state.access === 'session' && <SignInButton projectId={projectId} />}
-        <a className="button" href={projectUrl}>
-          Open project in Pascal
-        </a>
-      </Status>
-    )
-  }
+  if (state.kind === 'refused') return <RefusedStatus projectId={projectId} />
+  if (state.kind === 'reopen') return <ReopenStatus access={state.access} projectId={projectId} />
   if (state.kind === 'error') return <ErrorStatus error={state.error} onRetry={reload} projectId={projectId} anonymous={state.anonymous} />
   if (state.kind === 'no-file') return <NoFileStatus scene={state.scene} onRetry={reload} />
   return <Scene key={state.kind === 'live' ? 'live' : 'baked'} state={state} onRetry={reload} />
@@ -105,9 +83,11 @@ function Scene({
   if (openError) {
     return (
       <Status title="The 3D view couldn't be opened" state="error">
-        <button className="button" onClick={onRetry} type="button">
-          Try again
-        </button>
+        <Actions>
+          <button className="button primary" onClick={onRetry} type="button">
+            Try again
+          </button>
+        </Actions>
       </Status>
     )
   }
@@ -240,9 +220,11 @@ function NoFileStatus({ scene, onRetry }: { scene: SceneResponse; onRetry: () =>
     return (
       <Status title="This project's 3D file is being prepared" state="baking">
         This page checks again every 30 seconds.
-        <button className="button" onClick={onRetry} type="button">
-          Check now
-        </button>
+        <Actions>
+          <button className="button primary" onClick={onRetry} type="button">
+            Check now
+          </button>
+        </Actions>
       </Status>
     )
   }
@@ -253,51 +235,135 @@ function NoFileStatus({ scene, onRetry }: { scene: SceneResponse; onRetry: () =>
   )
 }
 
-function SignInButton({ projectId }: { projectId: string }) {
-  const [available, setAvailable] = useState(false)
+/**
+ * Sign in with Pascal is offered only when this origin is a registered viewer (`canSignIn`) and
+ * no company token endpoint is set. Until that is known, screens show their no-button copy.
+ */
+function useSignIn(projectId: string, enabled = true) {
+  const [registered, setRegistered] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const offered = enabled && !!projectId && !PASCAL_TOKEN_URL
   useEffect(() => {
+    if (!offered) return
     let active = true
-    if (!PASCAL_TOKEN_URL) void canSignIn(PASCAL_BASE_URL).then((value) => { if (active) setAvailable(value) })
+    void canSignIn(PASCAL_BASE_URL).then((value) => { if (active) setRegistered(value) })
     return () => { active = false }
-  }, [])
+  }, [offered])
   const start = async () => {
     setBusy(true)
     setError(null)
     try { await signIn(projectId, PASCAL_BASE_URL) } catch (failure) {
-      setError(failure instanceof SignInUnavailable ? failure.message : "Sign-in couldn't be started. Please try again.")
+      setError(failure instanceof SignInUnavailable ? "Sign-in isn't available on this site."
+        : "Sign-in couldn't start. Try again.")
       setBusy(false)
     }
   }
-  return <>
-    {available && projectId && <button className="button" disabled={busy}
-      onClick={() => void start()} type="button">Sign in with Pascal</button>}
-    {error && <p role="alert">{error}</p>}
-  </>
+  return { available: offered && registered, busy, error, start }
+}
+
+type SignInState = ReturnType<typeof useSignIn>
+
+/** A screen's buttons: the primary action first, then at most one secondary action. */
+function Actions({ children }: { children: ReactNode }) {
+  return <div className="status-actions">{children}</div>
+}
+
+/** Keeps its width while busy, so the label change does not move the layout. */
+function SignInButton({ signIn }: { signIn: SignInState }) {
+  return (
+    <button aria-busy={signIn.busy || undefined} className="button primary" disabled={signIn.busy}
+      onClick={() => void signIn.start()} type="button">
+      <span className="button-labels">
+        <span className={signIn.busy ? 'invisible' : undefined}>Sign in with Pascal</span>
+        <span className={signIn.busy ? undefined : 'invisible'}>Opening Pascal…</span>
+      </span>
+    </button>
+  )
+}
+
+/** Sits below the buttons without taking space, so an error does not move the layout. */
+function SignInError({ signIn }: { signIn: SignInState }) {
+  return <p className="status-error" role="alert">{signIn.error}</p>
+}
+
+function SignInActions({ signIn }: { signIn: SignInState }) {
+  if (!signIn.available) return null
+  return <Actions><SignInButton signIn={signIn} /><SignInError signIn={signIn} /></Actions>
+}
+
+function RefusedStatus({ projectId }: { projectId: string }) {
+  const signIn = useSignIn(projectId)
+  return (
+    <Status title="This account can't open this project" state="refused">
+      {signIn.available ? 'Another Pascal account may have access.'
+        : 'Open this project from Pascal with another account.'}
+      <SignInActions signIn={signIn} />
+    </Status>
+  )
+}
+
+function ReopenStatus({ access, projectId }: { access: 'session' | 'share'; projectId: string }) {
+  const signIn = useSignIn(projectId, access === 'session')
+  const projectUrl = new URL(
+    projectId ? `/editor/${encodeURIComponent(projectId)}` : '/projects',
+    PASCAL_BASE_URL,
+  ).href
+  return (
+    <Status title={access === 'share' ? 'Reopen your share link' : 'Reopen from Pascal'} state="reopen">
+      {access === 'share'
+        ? 'Open the original Pascal share link again to restore access.'
+        : signIn.available
+          ? 'Sign in again, or open this project from Pascal.'
+          : 'Open this project from Pascal again to restore access.'}
+      <Actions>
+        {signIn.available && <SignInButton signIn={signIn} />}
+        <a className={signIn.available ? 'button' : 'button primary'} href={projectUrl}>
+          Open project in Pascal
+        </a>
+        {signIn.available && <SignInError signIn={signIn} />}
+      </Actions>
+    </Status>
+  )
+}
+
+/** An anonymous read was refused. The copy never says whether the project exists or is private. */
+function AccessStatus({ anonymous, code, projectId }: {
+  anonymous: boolean; code: 'not_found' | 'unauthorized'; projectId: string
+}) {
+  const signIn = useSignIn(projectId, anonymous)
+  if (code === 'not_found') {
+    return (
+      <Status title="Project not found" state="not-found">
+        {signIn.available ? 'Check the address, or sign in if you have access.'
+          : 'Check the address, or open it from Pascal if you have access.'}
+        <SignInActions signIn={signIn} />
+      </Status>
+    )
+  }
+  return (
+    <Status title="This project needs access" state="needs-access">
+      {signIn.available ? 'Sign in if you have access, or reopen your original share link.'
+        : 'Open this project from Pascal or from your original share link.'}
+      <SignInActions signIn={signIn} />
+    </Status>
+  )
 }
 
 function ErrorStatus({ error, onRetry, projectId, anonymous }: {
   error: PascalError; onRetry: () => void; projectId: string; anonymous: boolean
 }) {
   const retry = (
-    <button className="button" onClick={onRetry} type="button">
-      Try again
-    </button>
+    <Actions>
+      <button className="button primary" onClick={onRetry} type="button">
+        Try again
+      </button>
+    </Actions>
   )
   switch (error.code) {
     case 'not_found':
-      return (
-        <Status title="Project not found" state="not-found">
-          Check the address, or sign in with a Pascal account that may have access.
-          {anonymous && <SignInButton projectId={projectId} />}
-        </Status>
-      )
     case 'unauthorized':
-      return <Status title="This project needs access" state="needs-access">
-        Sign in with a Pascal account that may have access, or reopen your original share link.
-        {anonymous && <SignInButton projectId={projectId} />}
-      </Status>
+      return <AccessStatus anonymous={anonymous} code={error.code} projectId={projectId} />
     case 'not_published':
       return (
         <Status title="This project isn't published yet" state="not-published">

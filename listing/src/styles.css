@@ -77,6 +77,35 @@ code {
   outline-offset: 2px;
 }
 
+/* A screen's main action. Other buttons keep the plain surface style. */
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.button.primary:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Stacks a button's labels in one cell, so it keeps the width of the longest. */
+.button-labels {
+  display: inline-grid;
+}
+
+.button-labels > * {
+  grid-area: 1 / 1;
+}
+
+.invisible {
+  visibility: hidden;
+}
+
 .project-header {
   position: absolute;
   top: 16px;
@@ -243,4 +272,24 @@ code {
   max-width: 420px;
   font-size: 14px;
   color: var(--muted);
+}
+
+.status-actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Out of the flow, so a message never moves the buttons above it. */
+.status-error {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 48px));
+  margin: 10px 0 0;
+  transform: translateX(-50%);
+  color: #b42318;
 }

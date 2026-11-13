@@ -15,7 +15,7 @@ and which rules to keep.
 | --- | --- |
 | `src/pascal/` | The API client: the contract schema (`contract.ts`), `getScene` / `fetchGlb` with typed errors and signed-URL renewal (`client.ts`), read helpers (`graph.ts`), and browser access resolution and PKCE (`access.ts`, `handoff.ts`). No React and no three.js in here; keep it that way so it can move into an SDK unchanged. |
 | `src/useListing.ts` | Loading flow: choose a ready bake or live graph; poll while baking. |
-| `src/App.tsx`, `src/styles.css` | Screens (loading, errors, no 3D file, WebGL unavailable) and the overlay UI. |
+| `src/App.tsx`, `src/styles.css` | Screens (loading, errors, access and Sign in with Pascal, no 3D file, WebGL unavailable) and the overlay UI. |
 | `src/viewer/Viewer.tsx` | The canvas: environment light, key light and shadow, camera framing, orbit controls. |
 | `src/viewer/LiveViewer.tsx` | Lazy live runtime: render plugin, read-only lease, graph/material hydration, readiness and listing interactions. |
 | `src/viewer/Model.tsx` | Parses the GLB, applies floor visibility, hover and click, plays door and window clips. |
@@ -140,14 +140,6 @@ The helper captures and immediately scrubs callback `code`, `error`, `error_desc
 
 Access resolves in order: callback, matching unexpired tab credential, private entry authorization,
 then anonymous published read. Direct links without private entry context can read public projects.
-On anonymous not-found or needs-access screens and session reopen screens, `canSignIn(baseUrl?)`
-resolves registration on demand. `signIn(projectId, baseUrl?)` starts a fresh session PKCE handoff
-and preserves the current local return path; unavailable registration throws `SignInUnavailable`
-without navigating. Every session authorize sends `interaction=sign_in`; share authorizes omit it.
-A validated error callback consumes the transaction without exchange and resolves access as
-`{ kind: 'refused' }`, offering another sign-in attempt. Error descriptions are never displayed.
-A refused or failed session handoff cannot fall back during the current page load; a later reload
-can read anonymously when there is no entry context or stored credential.
 If descriptor discovery is unavailable, only public projects work. An invalid callback or a
 rejected credential stops loading and shows “Reopen from Pascal” or “Reopen your share link”;
 it never silently retries anonymously. Share readers should reopen their original Pascal share
@@ -168,6 +160,26 @@ storage downloads omit cookies and never receive the Pascal bearer credential.
 
 `VITE_PASCAL_TOKEN_URL`, when set, takes precedence and skips the handoff and registry lookup.
 This remains an alternative for company login flows described below.
+
+### Sign in with Pascal
+
+What the visitor sees, what the site and project need, and the three helpers (`canSignIn`,
+`signIn`, `SignInUnavailable`) are in [README.md](README.md#sign-in-with-pascal). Implementation
+rules:
+
+- `useSignIn` in `src/App.tsx` drives the button on the anonymous not-found and needs-access
+  screens, the session reopen screen and the refused screen. Call `canSignIn` only there, never
+  on a successful visit, and never with `VITE_PASCAL_TOKEN_URL` set.
+- Each screen has two texts: one for when the button is shown and one that doesn't mention
+  signing in. Show the second until `canSignIn` resolves `true`.
+- `signIn` always starts a fresh session PKCE transaction with `interaction=sign_in` (share
+  authorizes omit it) and returns to the current local path. Show "Opening Pascal…" while it
+  navigates; on failure, show your own message in the `role="alert"` line, not the error's text.
+- A validated error callback is consumed without an exchange and resolves access as
+  `{ kind: 'refused' }`. Never display `error` or `error_description`, and never fall back to an
+  anonymous read in the same page load; a reload may.
+- Keep the copy neutral: Pascal does not reveal whether a project exists, is private or is
+  linked to another viewer, and the screens must not imply it.
 
 ## Private projects with your own login
 
