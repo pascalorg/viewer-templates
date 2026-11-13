@@ -79,8 +79,8 @@ for (const access of ['session', 'share'] as const) {
     expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('pascal:credential:')))).toEqual([])
     await expect(page.getByRole('link', { name: 'Open project in Pascal' })).toHaveAttribute('href', `${ISSUER}/editor/${PROJECT}`)
     await page.reload()
-    await expect(page.locator('main[data-state="reopen"]')).toBeVisible()
-    expect(calls.scene).toBe(1)
+    await expect(page.locator(`main[data-state="${access === 'share' ? 'reopen' : 'needs-access'}"]`)).toBeVisible()
+    expect(calls.scene).toBe(access === 'share' ? 1 : 2)
   })
 }
 

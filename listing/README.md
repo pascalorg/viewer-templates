@@ -59,6 +59,36 @@ CDNs. A `VITE_PASCAL_TOKEN_URL` or `VITE_PASCAL_BASE_URL` on another host is blo
 private projects use Open from Pascal. Vercel, Cloudflare Pages and other static hosts work as
 before; see [AGENTS.md](AGENTS.md#deploy).
 
+## Sign in with Pascal
+
+A visitor who opens a private project's address directly (`/?project=<id>`) sees "Project not
+found" or "This project needs access" (or "Reopen from Pascal" once earlier access stops working)
+with a **Sign in with Pascal** button. The button takes them
+to Pascal, which signs them in if needed and sends them back to the same address. Then either the
+project loads, or the page says "This account can't open this project" and offers to try another
+account. Pascal never says whether a project exists, is private or is linked to another viewer,
+so keep any copy you write just as neutral.
+
+For the button to appear and the project to load:
+
+- the site must be a registered Pascal viewer (Settings → Viewers, or Host on Pascal). On an
+  unregistered address, such as an unregistered local port, the screens show no button and their
+  text doesn't mention signing in;
+- the project's manager must link it to this viewer (Share → choose the viewer) and publish it.
+
+Nothing needs to be configured: the page asks Pascal whether its own address is registered. The
+access Pascal returns is kept for the current tab only and lasts up to an hour; after that the page
+renews it with another trip through Pascal. With `VITE_PASCAL_TOKEN_URL` set, the button is not
+offered.
+
+`src/pascal` exports the three pieces the screens in `src/App.tsx` use:
+
+- `canSignIn(baseUrl?)` resolves to `true` when this site is a registered viewer. Call it only on
+  an access screen, so public visits make no extra request.
+- `signIn(projectId, baseUrl?)` leaves for Pascal and comes back to the current address.
+- `SignInUnavailable` is what `signIn` throws, without leaving the page, when the site isn't
+  registered.
+
 [`AGENTS.md`](AGENTS.md) covers the API contract, what the 3D file contains, deployment,
 customisation and the rules to keep (start with: never put a Pascal API key in the browser).
 

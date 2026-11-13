@@ -13,6 +13,7 @@ export type Transaction = {
   createdAt: number
   returnPath: string
   renewal?: boolean
+  signIn?: boolean
 }
 export type Credential = {
   access_token: string
@@ -31,6 +32,20 @@ export class ReopenRequired extends Error {
   constructor(readonly access: AccessMode = 'session') {
     super(access === 'share' ? 'Reopen your share link' : 'Reopen from Pascal')
     this.name = 'ReopenRequired'
+  }
+}
+
+export class SignInRefused extends Error {
+  constructor() {
+    super("This account can't open this project")
+    this.name = 'SignInRefused'
+  }
+}
+
+export class SignInUnavailable extends Error {
+  constructor() {
+    super('This site is not a registered Pascal viewer.')
+    this.name = 'SignInUnavailable'
   }
 }
 
@@ -63,7 +78,7 @@ export function readTransaction(issuer: string): Transaction | null {
   return value as Transaction
 }
 
-type Callback = { code: string | null; state: string | null; iss: string | null; valid: boolean }
+type Callback = { code: string | null; error: string | null; state: string | null; iss: string | null; valid: boolean }
 let callback: Callback | null = null
 let captured = false
 
@@ -72,13 +87,16 @@ export function captureHandoffCallback(): void {
   if (captured) return
   captured = true
   const url = new URL(location.href)
-  const names = ['code', 'state', 'iss']
+  const names = ['code', 'error', 'error_description', 'state', 'iss']
   if (!names.some((name) => url.searchParams.has(name))) return
   callback = {
     code: url.searchParams.get('code'),
+    error: url.searchParams.get('error'),
     state: url.searchParams.get('state'),
     iss: url.searchParams.get('iss'),
-    valid: names.every((name) => url.searchParams.getAll(name).length === 1),
+    valid: names.every((name) => url.searchParams.getAll(name).length <= 1) &&
+      ['state', 'iss'].every((name) => url.searchParams.getAll(name).length === 1) &&
+      Number(url.searchParams.has('code')) + Number(url.searchParams.has('error')) === 1,
   }
   for (const name of names) url.searchParams.delete(name)
   history.replaceState(history.state, '', url.pathname + url.search + url.hash)
@@ -109,7 +127,7 @@ function localReturnPath(path: string): string {
   if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) throw new ReopenRequired()
   const url = new URL(path, location.origin)
   if (url.origin !== location.origin) throw new ReopenRequired()
-  for (const name of ['code', 'state', 'iss']) url.searchParams.delete(name)
+  for (const name of ['code', 'error', 'error_description', 'state', 'iss']) url.searchParams.delete(name)
   return url.pathname + url.search + url.hash
 }
 
@@ -118,19 +136,21 @@ function base64url(bytes: Uint8Array): string {
 }
 
 export async function startAuthorize(
-  issuer: string, descriptor: Descriptor, project: string, access: AccessMode, renewal = false,
+  issuer: string, descriptor: Descriptor, project: string, access: AccessMode, renewal = false, signIn = false,
 ): Promise<void> {
   const state = base64url(crypto.getRandomValues(new Uint8Array(32)))
   const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)))
   const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))))
   const returnUrl = new URL(location.href)
-  returnUrl.searchParams.set('project', project)
-  returnUrl.searchParams.set('viewer', descriptor.viewer_id)
-  returnUrl.searchParams.set('access', access)
+  if (!signIn) {
+    returnUrl.searchParams.set('project', project)
+    returnUrl.searchParams.set('viewer', descriptor.viewer_id)
+    returnUrl.searchParams.set('access', access)
+  }
   const transaction: Transaction = {
     verifier, state, issuer, viewer: descriptor.viewer_id, project,
     redirect_uri: descriptor.redirect_uri, access, createdAt: Date.now(),
-    returnPath: localReturnPath(returnUrl.pathname + returnUrl.search + returnUrl.hash), renewal,
+    returnPath: localReturnPath(returnUrl.pathname + returnUrl.search + returnUrl.hash), renewal, signIn,
   }
   sessionStorage.setItem(transactionKey(issuer), JSON.stringify(transaction))
   const url = new URL('/viewer/authorize', issuer)
@@ -138,6 +158,7 @@ export async function startAuthorize(
     viewer: descriptor.viewer_id, project, access, code_challenge: challenge,
     code_challenge_method: 'S256', state, redirect_uri: descriptor.redirect_uri,
   }).toString()
+  if (access === 'session') url.searchParams.set('interaction', 'sign_in')
   window.top!.location.href = url.href
 }
 
@@ -163,10 +184,12 @@ export function clearCredential(credential: StoredCredential): void {
   sessionStorage.removeItem(credentialKey(credential.issuer, credential.viewer_id, credential.project_id))
 }
 
-/** Keep a token-free refusal marker so a direct reload cannot silently become anonymous. */
+/** Share readers still need their original durable link on a later reload. */
 export function rememberRejection(credential: StoredCredential): void {
   clearCredential(credential)
-  sessionStorage.setItem(reopenKey(credential.issuer, credential.viewer_id, credential.project_id), credential.access)
+  if (credential.access === 'share') {
+    sessionStorage.setItem(reopenKey(credential.issuer, credential.viewer_id, credential.project_id), credential.access)
+  }
 }
 
 export function rejectedAccess(issuer: string, viewer: string, project: string): AccessMode | null {
@@ -179,25 +202,38 @@ export async function exchangeCallback(
 ): Promise<StoredCredential> {
   let access: AccessMode = 'session'
   try {
-    const transaction = readTransaction(issuer)
+    let transaction: Transaction | null
+    try { transaction = readTransaction(issuer) } finally {
+      // A lost response or invalid transaction requires a new handoff.
+      sessionStorage.removeItem(transactionKey(issuer))
+    }
     if (transaction) access = transaction.access
-    // Consume locally even on refusal: a lost response requires a new handoff.
-    sessionStorage.removeItem(transactionKey(issuer))
     if (!callback || !transaction || !descriptor) throw new ReopenRequired(access)
     const age = Date.now() - transaction.createdAt
     const entry = detectEntry()
     const returnPath = localReturnPath(transaction.returnPath)
     const returnQuery = new URL(returnPath, location.origin).searchParams
     if (
-      !callback.valid || !callback.code || !/^pvc_[A-Za-z0-9_-]{43}$/.test(callback.code) ||
+      !callback.valid ||
+      (callback.code !== null && !/^pvc_[A-Za-z0-9_-]{43}$/.test(callback.code)) ||
       callback.state !== transaction.state || callback.iss !== issuer || age < 0 || age > 600_000 ||
       transaction.project !== project || transaction.viewer !== descriptor.viewer_id ||
       transaction.redirect_uri !== descriptor.redirect_uri ||
       location.origin + location.pathname !== transaction.redirect_uri ||
-      (entry && (entry.project !== project || entry.viewer !== transaction.viewer || entry.access !== access)) ||
-      returnQuery.get('project') !== project || returnQuery.get('viewer') !== transaction.viewer ||
-      returnQuery.get('access') !== access
+      (entry && (entry.project !== project || entry.viewer !== transaction.viewer ||
+        (entry.access !== access && !(transaction.signIn === true && entry.access === 'anonymous')))) ||
+      (transaction.signIn === true
+        ? (returnQuery.has('project') && (returnQuery.getAll('project').length !== 1 || returnQuery.get('project') !== project)) ||
+          ((returnQuery.has('viewer') || returnQuery.has('access')) &&
+            (returnQuery.getAll('viewer').length !== 1 || returnQuery.get('viewer') !== transaction.viewer ||
+              returnQuery.getAll('access').length !== 1 || ![access, 'anonymous'].includes(returnQuery.get('access') || '')))
+        : returnQuery.get('project') !== project || returnQuery.get('viewer') !== transaction.viewer ||
+          returnQuery.get('access') !== access)
     ) throw new ReopenRequired(access)
+    if (callback.error !== null) {
+      history.replaceState(history.state, '', returnPath)
+      throw new SignInRefused()
+    }
     const response = await fetch(new URL('/api/viewer-handoff/exchange', issuer), {
       method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: callback.code, code_verifier: transaction.verifier, viewer: transaction.viewer, redirect_uri: transaction.redirect_uri }),
@@ -218,7 +254,8 @@ export async function exchangeCallback(
     storeCredential(credential)
     history.replaceState(history.state, '', returnPath)
     return credential
-  } catch {
+  } catch (error) {
+    if (error instanceof SignInRefused) throw error
     throw new ReopenRequired(access)
   }
 }

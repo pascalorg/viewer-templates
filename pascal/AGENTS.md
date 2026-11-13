@@ -20,7 +20,7 @@ read it before changing how projects are read.
 | `src/App.tsx` | Maps the loading state to a screen or to `ProjectViewer`. |
 | `src/useProjectScene.ts` | Loading flow: access, scene read, bake download into a blob URL, runtime preparation, credential renewal, optional bake polling. |
 | `src/viewer/ProjectViewer.tsx` | The assembly. Keep it shaped like the hosted viewer's tree. |
-| `src/viewer/ViewerOverlay.tsx`, `GuestPrompt.tsx`, `screens.tsx`, `ErrorBoundary.tsx` | Header and controls bar, the "Get started" card, status screens, the crash fallback. |
+| `src/viewer/ViewerOverlay.tsx`, `GuestPrompt.tsx`, `screens.tsx`, `ErrorBoundary.tsx` | Header and controls bar, the "Get started" card, status and Sign in with Pascal screens, the crash fallback. |
 | `src/runtime/bootstrap.ts` | `prepareSceneRuntime`: built-in nodes, viewer config (assets, sounds, icons, local decoders), read-only lease, library materials, artifact store, plugins. |
 | `src/runtime/plugins.ts` | The plugin allowlist, install-state rules and the unknown-kind warning. |
 | `src/runtime/plugin-loader.ts` | Loads plugins once each, with a deadline and a late-arrival callback. |
@@ -97,3 +97,18 @@ Pascal" or "Reopen your share link" screen; it never falls back to an anonymous 
 `prepareSceneRuntime` waits up to 20 seconds for the plugins the scene needs. A plugin that
 arrives later bumps `runtimeRevision`: the live graph is set again and the bake's replacement
 nodes are rebuilt. Kinds no registered plugin draws are counted and warned once per kind.
+
+## Sign in with Pascal
+
+What the visitor sees, what the site and project need, and the three helpers (`canSignIn`,
+`signIn`, `SignInUnavailable`) are in [README.md](README.md#sign-in-with-pascal); the protocol
+rules are in [listing's AGENTS.md](../listing/AGENTS.md#sign-in-with-pascal). In this template:
+
+- `useSignIn` in `src/viewer/screens.tsx` drives the button on the anonymous not-found and
+  needs-access screens, the session reopen screen and the refused screen. Call `canSignIn` only
+  there, never on a successful visit.
+- Each screen has two texts: one for when the button is shown and one that doesn't mention
+  signing in. Show the second until `canSignIn` resolves `true`.
+- Sign in with Pascal is the primary button; "Open project in Pascal" becomes secondary next to it.
+  The busy label and the `role="alert"` line must not move the layout. Show your own message
+  there, never the error's text or anything from the callback.

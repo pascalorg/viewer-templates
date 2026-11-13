@@ -15,7 +15,7 @@ and which rules to keep.
 | --- | --- |
 | `src/pascal/` | The API client: the contract schema (`contract.ts`), `getScene` / `fetchGlb` with typed errors and signed-URL renewal (`client.ts`), read helpers (`graph.ts`), and browser access resolution and PKCE (`access.ts`, `handoff.ts`). No React and no three.js in here; keep it that way so it can move into an SDK unchanged. |
 | `src/useListing.ts` | Loading flow: choose a ready bake or live graph; poll while baking. |
-| `src/App.tsx`, `src/styles.css` | Screens (loading, errors, no 3D file, WebGL unavailable) and the overlay UI. |
+| `src/App.tsx`, `src/styles.css` | Screens (loading, errors, access and Sign in with Pascal, no 3D file, WebGL unavailable) and the overlay UI. |
 | `src/viewer/Viewer.tsx` | The canvas: environment light, key light and shadow, camera framing, orbit controls. |
 | `src/viewer/LiveViewer.tsx` | Lazy live runtime: render plugin, read-only lease, graph/material hydration, readiness and listing interactions. |
 | `src/viewer/Model.tsx` | Parses the GLB, applies floor visibility, hover and click, plays door and window clips. |
@@ -134,9 +134,9 @@ then open it from Pascal or create a share link pinned to this viewer.
 The helper resolves `GET /api/viewers/resolve?origin=<location.origin>` once per page to discover
 the viewer ID and exact callback. No viewer ID or per-project deployment configuration is needed.
 Pascal supplies `project`, `viewer`, and `access=session|share|anonymous` in its entry URL.
-The helper captures and immediately scrubs callback `code`, `state`, and `iss` before React
-renders, validates the saved transaction (including its ten-minute maximum age), then exchanges
-the code using S256 PKCE and `credentials: 'omit'`. No Pascal cookies are sent by API reads.
+The helper captures and immediately scrubs callback `code`, `error`, `error_description`,
+`state`, and `iss` before loading the app or rendering React, validates the saved transaction
+(including its ten-minute maximum age), then exchanges the code using S256 PKCE and `credentials: 'omit'`. No Pascal cookies are sent by API reads.
 
 Access resolves in order: callback, matching unexpired tab credential, private entry authorization,
 then anonymous published read. Direct links without private entry context can read public projects.
@@ -160,6 +160,26 @@ storage downloads omit cookies and never receive the Pascal bearer credential.
 
 `VITE_PASCAL_TOKEN_URL`, when set, takes precedence and skips the handoff and registry lookup.
 This remains an alternative for company login flows described below.
+
+### Sign in with Pascal
+
+What the visitor sees, what the site and project need, and the three helpers (`canSignIn`,
+`signIn`, `SignInUnavailable`) are in [README.md](README.md#sign-in-with-pascal). Implementation
+rules:
+
+- `useSignIn` in `src/App.tsx` drives the button on the anonymous not-found and needs-access
+  screens, the session reopen screen and the refused screen. Call `canSignIn` only there, never
+  on a successful visit, and never with `VITE_PASCAL_TOKEN_URL` set.
+- Each screen has two texts: one for when the button is shown and one that doesn't mention
+  signing in. Show the second until `canSignIn` resolves `true`.
+- `signIn` always starts a fresh session PKCE transaction with `interaction=sign_in` (share
+  authorizes omit it) and returns to the current local path. Show "Opening Pascal…" while it
+  navigates; on failure, show your own message in the `role="alert"` line, not the error's text.
+- A validated error callback is consumed without an exchange and resolves access as
+  `{ kind: 'refused' }`. Never display `error` or `error_description`, and never fall back to an
+  anonymous read in the same page load; a reload may.
+- Keep the copy neutral: Pascal does not reveal whether a project exists, is private or is
+  linked to another viewer, and the screens must not imply it.
 
 ## Private projects with your own login
 

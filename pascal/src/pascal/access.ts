@@ -1,11 +1,11 @@
 import {
-  type AccessMode, type Descriptor, type StoredCredential, ReopenRequired,
+  type AccessMode, type Descriptor, type StoredCredential, ReopenRequired, SignInRefused, SignInUnavailable,
   detectEntry, exchangeCallback, hasHandoffCallback,
   readCredential, rejectedAccess, rememberRejection, startAuthorize, storeCredential,
 } from './handoff'
 
-export { ReopenRequired } from './handoff'
-export type Access = { kind: 'anonymous' } | { kind: 'opening' } |
+export { ReopenRequired, SignInUnavailable } from './handoff'
+export type Access = { kind: 'anonymous' } | { kind: 'opening' } | { kind: 'refused' } |
   { kind: 'credential'; credential: StoredCredential }
 
 const descriptors = new Map<string, Promise<Descriptor | null>>()
@@ -29,6 +29,19 @@ function resolveDescriptor(issuer: string): Promise<Descriptor | null> {
     } catch { return null }
   })())
   return descriptors.get(issuer)!
+}
+
+/** Resolve registration only when an access screen needs to offer sign-in. */
+export async function canSignIn(baseUrl = 'https://editor.pascal.app'): Promise<boolean> {
+  return !!await resolveDescriptor(new URL(baseUrl).origin)
+}
+
+/** Explicit user action: always start a new session transaction and PKCE verifier. */
+export async function signIn(projectId: string, baseUrl = 'https://editor.pascal.app'): Promise<void> {
+  const issuer = new URL(baseUrl).origin
+  const descriptor = await resolveDescriptor(issuer)
+  if (!descriptor) throw new SignInUnavailable()
+  await startAuthorize(issuer, descriptor, projectId, 'session', false, true)
 }
 
 /**
@@ -72,7 +85,11 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
       if (rejected.has(key)) throw new ReopenRequired(rejected.get(key))
       if (hasHandoffCallback() && !callbackCompleted) {
         callbackResult ??= exchangeCallback(issuer, projectId, descriptor)
-        const credential = await callbackResult
+        const credential = await callbackResult.catch((error: unknown) => {
+          if (error instanceof SignInRefused) return null
+          throw error
+        })
+        if (!credential) return { kind: 'refused' }
         callbackCompleted = true
         if (Date.parse(credential.expires_at) - Date.now() <= RENEW_MARGIN) return renew(credential, descriptor)
         return { kind: 'credential', credential }

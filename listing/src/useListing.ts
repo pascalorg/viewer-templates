@@ -8,8 +8,9 @@ import {
 export type ListingState =
   | { kind: 'loading' }
   | { kind: 'opening' }
+  | { kind: 'refused' }
   | { kind: 'reopen'; access: 'session' | 'share' }
-  | { kind: 'error'; error: PascalError }
+  | { kind: 'error'; error: PascalError; anonymous: boolean }
   /** The project is readable but its 3D file is not ready (`bake.status` other than ready). */
   | { kind: 'no-file'; scene: SceneResponse }
   | { kind: 'live'; scene: SceneResponse }
@@ -47,6 +48,10 @@ export function useListing(baseUrl: string, projectId: string) {
         if (!attempt.quiet) setState({ kind: 'opening' })
         access = await resolveAccess(projectId, baseUrl)
         if (signal.aborted) return
+        if (access.kind === 'refused') {
+          setState({ kind: 'refused' })
+          return
+        }
         if (access.kind === 'opening') {
           setState({ kind: 'opening' })
           return
@@ -106,7 +111,7 @@ export function useListing(baseUrl: string, projectId: string) {
         if (signal.aborted) return
         setState(failure instanceof ReopenRequired
           ? { kind: 'reopen', access: failure.access }
-          : { kind: 'error', error: asPascalError(failure) })
+          : { kind: 'error', anonymous: access.kind === 'anonymous' && !PASCAL_TOKEN_URL, error: asPascalError(failure) })
       }
     })
     return () => {
