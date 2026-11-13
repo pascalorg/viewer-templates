@@ -134,12 +134,20 @@ then open it from Pascal or create a share link pinned to this viewer.
 The helper resolves `GET /api/viewers/resolve?origin=<location.origin>` once per page to discover
 the viewer ID and exact callback. No viewer ID or per-project deployment configuration is needed.
 Pascal supplies `project`, `viewer`, and `access=session|share|anonymous` in its entry URL.
-The helper captures and immediately scrubs callback `code`, `state`, and `iss` before React
-renders, validates the saved transaction (including its ten-minute maximum age), then exchanges
-the code using S256 PKCE and `credentials: 'omit'`. No Pascal cookies are sent by API reads.
+The helper captures and immediately scrubs callback `code`, `error`, `error_description`,
+`state`, and `iss` before loading the app or rendering React, validates the saved transaction
+(including its ten-minute maximum age), then exchanges the code using S256 PKCE and `credentials: 'omit'`. No Pascal cookies are sent by API reads.
 
 Access resolves in order: callback, matching unexpired tab credential, private entry authorization,
 then anonymous published read. Direct links without private entry context can read public projects.
+On anonymous not-found or needs-access screens and session reopen screens, `canSignIn(baseUrl?)`
+resolves registration on demand. `signIn(projectId, baseUrl?)` starts a fresh session PKCE handoff
+and preserves the current local return path; unavailable registration throws `SignInUnavailable`
+without navigating. Every session authorize sends `interaction=sign_in`; share authorizes omit it.
+A validated error callback consumes the transaction without exchange and resolves access as
+`{ kind: 'refused' }`, offering another sign-in attempt. Error descriptions are never displayed.
+A refused or failed session handoff cannot fall back during the current page load; a later reload
+can read anonymously when there is no entry context or stored credential.
 If descriptor discovery is unavailable, only public projects work. An invalid callback or a
 rejected credential stops loading and shows “Reopen from Pascal” or “Reopen your share link”;
 it never silently retries anonymously. Share readers should reopen their original Pascal share

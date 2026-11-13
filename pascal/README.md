@@ -15,7 +15,9 @@ npm run dev
 # open http://localhost:5173/?project=<project id>
 ```
 
-The project must be published; direct anonymous links require it to be public.
+The project must be published; direct anonymous links require it to be public. On a registered
+viewer, an access screen offers **Sign in with Pascal** to try a Pascal account that may have
+access. A refusal lets the visitor try another account without revealing project availability.
 
 ## Choosing a project
 
@@ -138,7 +140,7 @@ Pascal can host the built site at `https://<slug>.pascal-viewer.app`. This uses
 Keep the key in your shell, never in `.env`. Pascal hosting sends its own Content-Security-Policy,
 which allows connections only to the site, `editor.pascal.app`, Supabase storage and the decoder
 CDNs. A `VITE_PASCAL_BASE_URL` or `VITE_PASCAL_ASSETS_URL` on another host is blocked there.
-Private projects use Open from Pascal; see
+Private projects use Open from Pascal or Sign in with Pascal; see
 [listing's AGENTS.md](../listing/AGENTS.md#open-from-pascal). The build is a static site, so
 Vercel, Cloudflare Pages and other static hosts work too.
 

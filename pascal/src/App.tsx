@@ -4,7 +4,7 @@ import { hasHandoffCallback } from './pascal/handoff'
 import { projectSceneRuntime } from './runtime/project-scene'
 import { useProjectScene } from './useProjectScene'
 import { ProjectViewer } from './viewer/ProjectViewer'
-import { ErrorScreen, LoadingScreen, NeedsAccessScreen, NoFileScreen, Status } from './viewer/screens'
+import { ErrorScreen, LoadingScreen, NeedsAccessScreen, NoFileScreen, RefusedScreen, Status } from './viewer/screens'
 
 export function App() {
   const projectId = useMemo(() => projectIdFromLocation(), [])
@@ -20,8 +20,9 @@ function Project({ projectId }: { projectId: string }) {
     case 'loading': return <LoadingScreen />
     case 'opening': return <LoadingScreen opening />
     case 'downloading': return <LoadingScreen progress={state.progress} />
+    case 'refused': return <RefusedScreen baseUrl={PASCAL_BASE_URL} projectId={projectId} />
     case 'reopen': return <NeedsAccessScreen access={state.access} baseUrl={PASCAL_BASE_URL} projectId={projectId} />
-    case 'error': return <ErrorScreen error={state.error} onRetry={reload} />
+    case 'error': return <ErrorScreen error={state.error} onRetry={reload} baseUrl={PASCAL_BASE_URL} projectId={projectId} anonymous={state.anonymous} />
     case 'no-file': return <NoFileScreen scene={state.scene} onRetry={reload} />
     case 'live':
     case 'baked': {

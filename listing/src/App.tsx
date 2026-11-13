@@ -10,7 +10,7 @@ import {
 } from 'react'
 import { PASCAL_BASE_URL, PASCAL_TOKEN_URL, projectIdFromLocation } from './config'
 import { hasHandoffCallback } from './pascal/handoff'
-import { listLevels, type PascalError, type SceneResponse } from './pascal'
+import { canSignIn, signIn, SignInUnavailable, listLevels, type PascalError, type SceneResponse } from './pascal'
 import { type ListingState, useListing } from './useListing'
 import type { ModelInfo } from './viewer/Model'
 import type { RoomHover } from './viewer/semantics'
@@ -54,6 +54,10 @@ function Listing({ projectId }: { projectId: string }) {
 
   if (state.kind === 'loading') return <Status title="Loading project…" state="loading" />
   if (state.kind === 'opening') return <Status title="Opening from Pascal…" state="opening" />
+  if (state.kind === 'refused') return <Status title="This account can't open this project" state="refused">
+    <p>Another Pascal account may have access.</p>
+    <SignInButton projectId={projectId} />
+  </Status>
   if (state.kind === 'reopen') {
     const projectUrl = new URL(
       projectId ? `/editor/${encodeURIComponent(projectId)}` : '/projects',
@@ -67,13 +71,14 @@ function Listing({ projectId }: { projectId: string }) {
         {state.access === 'share'
           ? 'Open the original Pascal share link again to restore access.'
           : 'Open this project from Pascal again to restore access.'}
+        {state.access === 'session' && <SignInButton projectId={projectId} />}
         <a className="button" href={projectUrl}>
           Open project in Pascal
         </a>
       </Status>
     )
   }
-  if (state.kind === 'error') return <ErrorStatus error={state.error} onRetry={reload} />
+  if (state.kind === 'error') return <ErrorStatus error={state.error} onRetry={reload} projectId={projectId} anonymous={state.anonymous} />
   if (state.kind === 'no-file') return <NoFileStatus scene={state.scene} onRetry={reload} />
   return <Scene key={state.kind === 'live' ? 'live' : 'baked'} state={state} onRetry={reload} />
 }
@@ -248,7 +253,33 @@ function NoFileStatus({ scene, onRetry }: { scene: SceneResponse; onRetry: () =>
   )
 }
 
-function ErrorStatus({ error, onRetry }: { error: PascalError; onRetry: () => void }) {
+function SignInButton({ projectId }: { projectId: string }) {
+  const [available, setAvailable] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    let active = true
+    if (!PASCAL_TOKEN_URL) void canSignIn(PASCAL_BASE_URL).then((value) => { if (active) setAvailable(value) })
+    return () => { active = false }
+  }, [])
+  const start = async () => {
+    setBusy(true)
+    setError(null)
+    try { await signIn(projectId, PASCAL_BASE_URL) } catch (failure) {
+      setError(failure instanceof SignInUnavailable ? failure.message : "Sign-in couldn't be started. Please try again.")
+      setBusy(false)
+    }
+  }
+  return <>
+    {available && projectId && <button className="button" disabled={busy}
+      onClick={() => void start()} type="button">Sign in with Pascal</button>}
+    {error && <p role="alert">{error}</p>}
+  </>
+}
+
+function ErrorStatus({ error, onRetry, projectId, anonymous }: {
+  error: PascalError; onRetry: () => void; projectId: string; anonymous: boolean
+}) {
   const retry = (
     <button className="button" onClick={onRetry} type="button">
       Try again
@@ -258,9 +289,15 @@ function ErrorStatus({ error, onRetry }: { error: PascalError; onRetry: () => vo
     case 'not_found':
       return (
         <Status title="Project not found" state="not-found">
-          Check the link, or ask the owner to make the project public.
+          Check the address, or sign in with a Pascal account that may have access.
+          {anonymous && <SignInButton projectId={projectId} />}
         </Status>
       )
+    case 'unauthorized':
+      return <Status title="This project needs access" state="needs-access">
+        Sign in with a Pascal account that may have access, or reopen your original share link.
+        {anonymous && <SignInButton projectId={projectId} />}
+      </Status>
     case 'not_published':
       return (
         <Status title="This project isn't published yet" state="not-published">

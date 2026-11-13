@@ -8,8 +8,9 @@ import {
 export type ProjectSceneState =
   | { kind: 'loading' }
   | { kind: 'opening' }
+  | { kind: 'refused' }
   | { kind: 'reopen'; access: 'session' | 'share' }
-  | { kind: 'error'; error: PascalError }
+  | { kind: 'error'; error: PascalError; anonymous: boolean }
   | { kind: 'no-file'; scene: SceneResponse }
   | { kind: 'downloading'; scene: SceneResponse; progress: number | null }
   | { kind: 'live'; scene: SceneResponse; runtimeRevision: number }
@@ -120,6 +121,11 @@ export function useProjectScene(
       // results here; an authorization navigation it starts cannot be recalled.
       access = await resolveAccess(projectId, baseUrl)
       if (signal.aborted) return
+      if (access.kind === 'refused') {
+        clearActive()
+        publish({ kind: 'refused' })
+        return
+      }
       if (access.kind === 'opening') {
         clearActive()
         publish({ kind: 'opening' })
@@ -204,7 +210,7 @@ export function useProjectScene(
       } catch (failure) {
         publish(failure instanceof ReopenRequired
           ? { kind: 'reopen', access: failure.access }
-          : { kind: 'error', error: failure instanceof PascalError
+          : { kind: 'error', anonymous: access.kind === 'anonymous', error: failure instanceof PascalError
             ? failure : new PascalError('http', String(failure)) })
       }
     })
