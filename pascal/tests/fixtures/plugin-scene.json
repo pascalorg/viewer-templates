@@ -1,0 +1,39 @@
+{
+  "pool": {
+    "object": "node",
+    "id": "pool_fixture",
+    "type": "pool:pool",
+    "parentId": "level_fixture",
+    "visible": true,
+    "children": [],
+    "position": [
+      7,
+      0.2,
+      0
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "length": 6,
+    "width": 4,
+    "waterQuality": "low"
+  },
+  "libraryMaterials": [
+    {
+      "id": "mtl_s2fixture",
+      "name": "Fixture pink plaster",
+      "category": "not-a-category",
+      "thumbnailUrl": null,
+      "preset": {
+        "maps": {},
+        "mapProperties": {
+          "color": "#e6428f",
+          "roughness": 0.8,
+          "metalness": 0
+        }
+      }
+    }
+  ]
+}

@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Runs the pascal template's browser tests too; they are too slow for every pull request.
+  workflow_dispatch:
 
 jobs:
   template:
@@ -12,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        template: [listing]
+        template: [listing, pascal]
     defaults:
       run:
         working-directory: ${{ matrix.template }}
@@ -25,5 +27,35 @@ jobs:
           cache-dependency-path: ${{ matrix.template }}/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run build
+        if: matrix.template == 'pascal'
+      - run: npm run check
+        if: matrix.template == 'pascal'
+      # npm ls exits 1 for an empty filtered list; validate the JSON explicitly.
+      - name: Verify editor and Next are absent
+        if: matrix.template == 'pascal'
+        run: |
+          node --input-type=module <<'JS'
+          import { spawnSync } from 'node:child_process'
+          const result = spawnSync('npm', ['ls', '@pascal-app/editor', 'next', '--all', '--json'], { encoding: 'utf8' })
+          console.log(result.stdout)
+          const tree = JSON.parse(result.stdout)
+          if (result.error || tree.error || tree.errors || Object.keys(tree.dependencies || {}).length || ![0, 1].includes(result.status)) process.exit(1)
+          JS
+      # pascal renders full 3D scenes; without a GPU that takes minutes, so its browser tests run
+      # on the author's machine before a pull request and here only on a manual run.
       - run: npx playwright install --with-deps chromium
+        if: matrix.template == 'listing' || github.event_name == 'workflow_dispatch'
       - run: npm run test:e2e
+        if: matrix.template == 'listing' || github.event_name == 'workflow_dispatch'
+      - run: npm run deploy:dry
+        if: matrix.template == 'pascal'
+        env:
+          VIEWER_ID: viewer_dryrun
+
+  shared-client:
+    name: Identical Pascal API clients
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: diff -r listing/src/pascal pascal/src/pascal

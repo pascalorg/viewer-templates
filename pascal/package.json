@@ -1,0 +1,54 @@
+{
+  "name": "pascal-viewer",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@dgreenheck/ez-tree": "1.1.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource/barlow": "^5.3.0",
+    "@pascal-app/core": "1.1.4",
+    "@pascal-app/nodes": "1.1.4",
+    "@pascal-app/plugin-articraft": "github:pascalorg/plugin-articraft#29bbd99152cb68daa8465783ea4c1a62432346be",
+    "@pascal-app/plugin-boots": "github:pascalorg/plugin-boots#e68c0728c5045b5b66c5a0ebed6616b7e2d9c35f",
+    "@pascal-app/plugin-environment": "github:wass08/environment#452cee32c51e214d8df90772423d44d1b5323868",
+    "@pascal-app/plugin-pool": "github:wass08/pool-pascal-plugin#e0dc7d96aaede4f809bf316b139779aee6783b80",
+    "@pascal-app/plugin-streetscape": "github:wass08/streetscape-pascal-plugin#8b896592ec56734e0dbbb92be2f652370955ec31",
+    "@pascal-app/plugin-trees": "github:pascalorg/plugin-trees#cbaf45033e6567be5ea5377fd2fc299a71cb089d",
+    "@pascal-app/viewer": "1.1.4",
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.2",
+    "lucide-react": "^1.69.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.187.0",
+    "zod": "4.6.7",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "0.187.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7"
+  },
+  "overrides": {
+    "three": "0.187.0"
+  },
+  "version": "0.1.0",
+  "description": "Pascal viewer scaffold on the public rendering packages",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "node scripts/typecheck.mjs",
+    "check": "node scripts/check-build.mjs",
+    "test:e2e": "npm run build -- --mode runtime-test && playwright test",
+    "deploy:dry": "npx @pascal-app/cli@1.1.4 viewer deploy dist --viewer $VIEWER_ID --dry-run"
+  }
+}
