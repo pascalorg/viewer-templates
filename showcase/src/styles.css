@@ -1,0 +1,30 @@
+@import "tailwindcss";
+@import "@pascal-app/viewer/ui/theme.css";
+@import "@fontsource-variable/geist-mono/wght.css";
+@import "./showcase/showcase.css";
+@source "../node_modules/@pascal-app/viewer/dist/ui";
+@source "../node_modules/@pascal-app/plugin-*/src";
+@source "./";
+
+/* DM Sans (SIL Open Font License, public/fonts/dm-sans-LICENSE.txt), self-hosted: a variable
+   font, so the 350 to 550 weights the chrome uses come from one file. */
+@font-face {
+  font-family: "DM Sans";
+  src: url("/fonts/dm-sans-latin.woff2") format("woff2");
+  font-weight: 100 1000;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* The /next type: DM Sans everywhere, the viewer's labels and callouts included; Geist Mono for
+   the figures the viewer sets in mono (room areas, the sky clock). */
+@theme inline {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+}
+html, body, #root { height: 100%; margin: 0; }
+body { @apply bg-background text-foreground font-sans; text-wrap: pretty; }
