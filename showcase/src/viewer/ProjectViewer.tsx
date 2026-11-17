@@ -73,7 +73,8 @@ function PresentationBridge() {
     registerPlacement(controls ? (position, target) => { void controls.setLookAt(...position, ...target, false) } : null)
     return () => registerPlacement(null)
   }, [controls])
-  useFrame(() => frameRendered())
+  // The viewer draws at priority 1; count completed draws, not the frame's pre-render tick.
+  useFrame(() => frameRendered(), 2)
   return null
 }
 
@@ -245,8 +246,8 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision }: {
   // A `?camera=` pose lands a frame after the scene is ready: the loader waits for it, so a
   // visible frame never shows the default view, then jumps.
   const waitingForOpeningCamera = openingCamera !== null && !openingCameraApplied
-  // The scene has drawn once: the chrome mounts (under the opaque loader) to stage the first view.
-  const sceneDrawn = !loading && (presentedScene || !(waitingFor3D || waitingForOpeningCamera))
+  // Stage under the loader only after the opening pose is applied, including on the presentedScene path.
+  const sceneDrawn = !loading && !waitingForOpeningCamera && (presentedScene || !waitingFor3D)
   const showSceneLoader = !sceneDrawn || !presented
   const loaderLeaving = useLoaderFade(showSceneLoader)
 
