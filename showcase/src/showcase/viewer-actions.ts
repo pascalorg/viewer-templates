@@ -10,6 +10,7 @@ import { firstXrayFamily } from './families'
 import { setMoodNow } from './time'
 import { walkingByTouch } from './touch'
 import { cutEntryPosition, cutRange, defaultView, type CutRange, type ModeId, type MoodId } from './modes'
+import { cameraAzimuth, type OpeningView } from './opening'
 
 /** Every dial control ends here: one function per choice, all through the public viewer store. */
 
@@ -136,23 +137,53 @@ export function setXrayFamily(family: string) {
 }
 
 /**
- * What the page opens on, before the first frame: no section or X-ray, dusk, and the default mode,
- * or the house assembled when the intro is about to reveal it.
+ * What the page opens on, before the first frame: no section or X-ray, the opening view's mood
+ * (Dusk by default) and mode, or the house assembled when the intro is about to reveal it. The Cut
+ * view and X-ray read the model, so until it is drawn they open assembled (`settleOpeningMode`).
  */
-export function applyOpeningView(levelCount: number, { introAhead }: { introAhead: boolean }) {
+export function applyOpeningView(levelCount: number, { introAhead, opening = null }: { introAhead: boolean; opening?: OpeningView | null }) {
   const viewer = useViewer.getState()
   viewer.setSectionEnabled(false)
   viewer.setXrayFamily(null)
   beforeOverlay = null
-  applyMode(introAhead ? 'exterior' : defaultView(levelCount).mode)
-  applyMood(defaultView(levelCount).mood)
+  const view = opening ?? { ...defaultView(levelCount), camera: null }
+  applyMode(introAhead || view.mode === 'cut' || view.mode === 'xray' ? 'exterior' : view.mode)
+  applyMood(view.mood)
 }
 
-/** The arrival view, also what Reset view returns to (with the camera, see `frameSettled`). */
-export function applyDefaultView(levelCount: number, context?: SceneContext) {
-  const initial = defaultView(levelCount)
-  applyMode(initial.mode, context)
-  applyMood(initial.mood)
+const readsModel = (opening: OpeningView | null) => opening?.mode === 'cut' || opening?.mode === 'xray'
+
+/**
+ * Runs `then` once the model has bounds when the opening view is the Cut view or X-ray (they
+ * read it; a bake reports its objects a few frames after it is drawn), at once otherwise.
+ */
+function whenModelReady(opening: OpeningView | null, read: () => SceneContext, then: () => void) {
+  if (!readsModel(opening)) return then()
+  let frames = 0
+  const attempt = () => {
+    if (modelBounds(read()) || ++frames >= 90) then()
+    else requestAnimationFrame(attempt)
+  }
+  attempt()
+}
+
+/** On arrival without the intro: the opening view's Cut view or X-ray, once the model is drawn, then `then`. */
+export function settleOpeningMode(opening: OpeningView | null, context: SceneContext | (() => SceneContext), then: () => void) {
+  const read = typeof context === 'function' ? context : () => context
+  whenModelReady(opening, read, () => {
+    if (opening && readsModel(opening)) applyMode(opening.mode, read())
+    then()
+  })
+}
+
+/**
+ * The arrival view (the saved opening view, else the template's), also what Reset view returns to,
+ * with the camera (see `frameSettled`).
+ */
+export function applyDefaultView(levelCount: number, context?: SceneContext, opening: OpeningView | null = null) {
+  const view = opening ?? { ...defaultView(levelCount), camera: null }
+  applyMode(view.mode, context)
+  applyMood(view.mood)
   useViewer.getState().resetSelection()
 }
 
@@ -263,7 +294,7 @@ function framingSample(context: SceneContext): FramingSample | null {
   return sample
 }
 
-/** The sampled points as the default view draws them: Exploded lifts each floor by its gap. */
+/** The sampled points as a view in `mode` draws them: Exploded lifts each floor by its gap. */
 function defaultViewPoints(context: SceneContext, levelCount: number, mode = defaultView(levelCount).mode): Vec3[] | null {
   const sample = framingSample(context)
   if (!sample) return null
@@ -305,22 +336,31 @@ export function arrivalAzimuth(context: SceneContext) {
 }
 
 /**
- * The settled view of the default mode: the model fitted into the screen (both sizes) from the
- * arrival heading (`arrivalAzimuth`), or from `azimuth`. Camera controls are unmounted during a
- * walkthrough, so this waits two frames for them to come back.
+ * The settled view: the opening view's saved camera, or the model fitted into the screen (both
+ * sizes) as `opening`'s mode (the default one without it) draws it, from the arrival heading
+ * (`arrivalAzimuth`), or from `azimuth`. Camera controls are unmounted during a walkthrough, so
+ * this waits two frames for them to come back.
  */
 export function frameSettled(context: SceneContext | (() => SceneContext), levelCount: number, azimuth?: number,
-  { instant = false, onPlaced }: {
+  { instant = false, onPlaced, opening = null }: {
     /** Put the camera there at once (arrival, behind the loader), not through the controls' glide. */
     instant?: boolean
     /** Called once the pose is set (or framing gave up), e.g. to lift the loader. */
     onPlaced?: () => void
+    /** The saved opening view (viewer settings). */
+    opening?: OpeningView | null
   } = {}) {
   const read = typeof context === 'function' ? context : () => context
   let frames = 0
   const attempt = () => {
+    if (opening?.camera && frames >= 2) {
+      const { position, target } = opening.camera
+      if (!instant || !placeCamera(position, target)) emitter.emit('camera-controls:frame', { bounds: null, pose: { position, target } })
+      onPlaced?.()
+      return
+    }
     // A bake reports its objects a few frames after it is drawn: wait up to a second and a half.
-    const points = frames >= 2 ? defaultViewPoints(read(), levelCount) : null
+    const points = frames >= 2 ? defaultViewPoints(read(), levelCount, opening?.mode) : null
     if (!points) {
       if (++frames < 90) requestAnimationFrame(attempt)
       else onPlaced?.()
@@ -341,8 +381,11 @@ export type IntroStage = {
   startAzimuth: number
 }
 
-/** Assembles the house and hides it below the plane; null until the model has bounds. */
-export function startIntro(context: SceneContext, levelCount: number): IntroStage | null {
+/**
+ * Assembles the house and hides it below the plane; null until the model has bounds. The orbit ends
+ * on the opening view's heading: its saved camera's, or the arrival heading.
+ */
+export function startIntro(context: SceneContext, levelCount: number, opening: OpeningView | null = null): IntroStage | null {
   // The opening view keeps the house stacked for the intro, so the model's bounds are stacked too.
   const points = defaultViewPoints(context, levelCount, 'exterior')
   const model = modelBounds(context)
@@ -357,8 +400,8 @@ export function startIntro(context: SceneContext, levelCount: number): IntroStag
   viewer.setSectionFlipped(false)
   viewer.setSectionPosition(introSectionPosition(0, reveal.min, reveal.max))
   viewer.setSectionEnabled(true)
-  // The orbit ends on the arrival heading.
-  return { points, reveal, startAzimuth: arrivalAzimuth(context) - (INTRO_ORBIT_DEGREES * Math.PI) / 180 }
+  const end = opening?.camera ? cameraAzimuth(opening.camera) : arrivalAzimuth(context)
+  return { points, reveal, startAzimuth: end - (INTRO_ORBIT_DEGREES * Math.PI) / 180 }
 }
 
 /** One intro frame; `instant` places its camera at once (the first frame, behind the loader). */
@@ -370,21 +413,24 @@ export function applyIntroFrame(stage: IntroStage, frame: Pick<IntroFrame, 'reve
 }
 
 /**
- * The intro's end state: no section, the default view, and the settled framing from where the
- * orbit ended (`stage`) or from the current heading. `frame: false` leaves the camera to the
- * visitor who took it.
+ * The intro's end state: no section, the opening view (the default one without `opening`), and its
+ * camera, or the settled framing from where the orbit ended (`stage`) or from the current heading.
+ * `frame: false` leaves the camera to the visitor who took it.
  */
-export function finishIntro(levelCount: number, context: SceneContext | (() => SceneContext), { stage = null, frame = true, instant = false, onPlaced }: {
+export function finishIntro(levelCount: number, context: SceneContext | (() => SceneContext), { stage = null, frame = true, instant = false, onPlaced, opening = null }: {
   stage?: IntroStage | null
   frame?: boolean
   /** Behind the loader (no intro shown): set the settled view at once. */
   instant?: boolean
   onPlaced?: () => void
+  opening?: OpeningView | null
 } = {}) {
   const read = typeof context === 'function' ? context : () => context
   useViewer.getState().setSectionEnabled(false)
   beforeOverlay = null
-  applyDefaultView(levelCount, read())
-  if (frame) frameSettled(read, levelCount, stage ? introAzimuth(stage.startAzimuth, 1) : undefined, { instant, onPlaced })
-  else onPlaced?.()
+  whenModelReady(opening, read, () => {
+    applyDefaultView(levelCount, read(), opening)
+    if (frame) frameSettled(read, levelCount, stage ? introAzimuth(stage.startAzimuth, 1) : undefined, { instant, onPlaced, opening })
+    else onPlaced?.()
+  })
 }

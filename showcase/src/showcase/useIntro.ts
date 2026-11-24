@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { IntroSequence, steadyClock } from './intro'
 import { isPresented, markStaged } from './presentation'
-import { applyIntroFrame, finishIntro, frameSettled, startIntro, type SceneContext } from './viewer-actions'
+import type { OpeningView } from './opening'
+import { applyIntroFrame, finishIntro, frameSettled, settleOpeningMode, startIntro, type SceneContext } from './viewer-actions'
 
 // Once per page load: a late plugin or a bake that arrives later remounts the chrome, not the intro.
 let played = false
@@ -17,12 +18,14 @@ export function introAhead(enabled: boolean) {
  * Time advances at most 50 ms per frame, so a slow scene plays the whole reveal, just longer.
  * `now` is injectable for tests; reduced motion goes straight to the end state.
  */
-export function useIntro({ enabled, frameOnArrival, levelCount, context, now = () => performance.now() }: {
+export function useIntro({ enabled, frameOnArrival, levelCount, context, opening = null, now = () => performance.now() }: {
   enabled: boolean
   /** Without an intro, still settle the camera on the default view once (not over `?camera=`). */
   frameOnArrival: boolean
   levelCount: number
   context: SceneContext
+  /** The saved opening view (viewer settings) the page settles into; null for the template's. */
+  opening?: OpeningView | null
   now?: () => number
 }) {
   const [playing, setPlaying] = useState(() => enabled && !played)
@@ -30,13 +33,18 @@ export function useIntro({ enabled, frameOnArrival, levelCount, context, now = (
   const skipped = useRef(false)
   const latest = useRef({ levelCount, context, now })
   latest.current = { levelCount, context, now }
+  // The view the page arrives on is the one it opened with, whatever a manager changes meanwhile.
+  const arrival = useRef(opening).current
 
   useEffect(() => {
     // Without an intro: the settled default view, placed at once behind the loader; over a
     // `?camera=` link the camera is already where the link puts it.
     if (playing) return
-    if (frameOnArrival) frameSettled(() => latest.current.context, latest.current.levelCount, undefined, { instant: true, onPlaced: markStaged })
-    else markStaged()
+    const read = () => latest.current.context
+    settleOpeningMode(arrival, read, () => {
+      if (frameOnArrival) frameSettled(read, latest.current.levelCount, undefined, { instant: true, onPlaced: markStaged, opening: arrival })
+      else markStaged()
+    })
     // Once, on arrival.
   }, [])
 
@@ -44,7 +52,7 @@ export function useIntro({ enabled, frameOnArrival, levelCount, context, now = (
     if (!playing) return
     played = true
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      finishIntro(latest.current.levelCount, () => latest.current.context, { instant: !isPresented(), onPlaced: markStaged })
+      finishIntro(latest.current.levelCount, () => latest.current.context, { instant: !isPresented(), onPlaced: markStaged, opening: arrival })
       setPlaying(false)
       return
     }
@@ -62,6 +70,7 @@ export function useIntro({ enabled, frameOnArrival, levelCount, context, now = (
         // Ended before it was ever shown (no bounds): the settled view goes straight on screen.
         instant: !isPresented(),
         onPlaced: markStaged,
+        opening: arrival,
       })
       setPlaying(false)
     }
@@ -81,7 +90,7 @@ export function useIntro({ enabled, frameOnArrival, levelCount, context, now = (
       if (!stage) {
         // A bake reports its objects a frame or two after it is drawn: wait up to a second for
         // the model's bounds, then give up and open on the end state.
-        stage = startIntro(latest.current.context, latest.current.levelCount)
+        stage = startIntro(latest.current.context, latest.current.levelCount, arrival)
         if (!stage) {
           if (++waited > 60) finish()
           else frame = requestAnimationFrame(tick)

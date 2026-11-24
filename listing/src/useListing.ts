@@ -13,9 +13,10 @@ export type ListingState =
   | { kind: 'error'; error: PascalError; anonymous: boolean }
   /** The project is readable but its 3D file is not ready (`bake.status` other than ready). */
   | { kind: 'no-file'; scene: SceneResponse }
-  | { kind: 'live'; scene: SceneResponse }
-  | { kind: 'downloading'; scene: SceneResponse; progress: number | null }
-  | { kind: 'ready'; scene: SceneResponse; bytes: ArrayBuffer }
+  /** `token`: the credential the scene was read with, if any (viewer settings save with it). */
+  | { kind: 'live'; scene: SceneResponse; token?: string }
+  | { kind: 'downloading'; scene: SceneResponse; progress: number | null; token?: string }
+  | { kind: 'ready'; scene: SceneResponse; bytes: ArrayBuffer; token?: string }
 
 /** While a 3D file is being prepared, look again this often. */
 const BAKING_POLL_MS = 30_000
@@ -79,11 +80,11 @@ export function useListing(baseUrl: string, projectId: string) {
           current.scene.project.id === scene.project.id &&
           current.scene.revision.version === scene.revision.version
             ? current
-            : { kind, scene },
+            : kind === 'live' ? { kind, scene, token } : { kind, scene },
         )
         return
       }
-      setState({ kind: 'downloading', scene, progress: null })
+      setState({ kind: 'downloading', scene, progress: null, token })
       const glb = await fetchGlb(baseUrl, projectId, scene, {
         signal,
         token,
@@ -92,9 +93,10 @@ export function useListing(baseUrl: string, projectId: string) {
             kind: 'downloading',
             scene,
             progress: total ? Math.min(1, loaded / total) : null,
+            token,
           }),
       })
-      if (!signal.aborted) setState({ kind: 'ready', scene: glb.scene, bytes: glb.bytes })
+      if (!signal.aborted) setState({ kind: 'ready', scene: glb.scene, bytes: glb.bytes, token })
     }
 
     run().catch(async (error: unknown) => {

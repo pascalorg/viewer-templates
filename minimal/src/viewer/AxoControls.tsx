@@ -11,7 +11,7 @@ import {
   Vector2,
   Vector3,
 } from 'three'
-import { navigation, type Projection } from './navigation'
+import { type DrawingView, navigation, type Projection } from './navigation'
 
 /** Camera elevation of the axonometric view: 35° above the horizon, close to isometric. */
 const AXONOMETRIC_POLAR = (55 * Math.PI) / 180
@@ -34,6 +34,14 @@ function snapAzimuth(azimuth: number, projection: Projection) {
   const offset = projection === 'plan' ? 0 : Math.PI / 4
   return offset + Math.round((azimuth - offset) / QUARTER) * QUARTER
 }
+
+/** Quarter turns from the first corner (or side, in plan) to the one an azimuth settles on. */
+function turnsOf(azimuth: number, projection: Projection): DrawingView['turns'] {
+  const offset = projection === 'plan' ? 0 : Math.PI / 4
+  return ((((Math.round((azimuth - offset) / QUARTER)) % 4) + 4) % 4) as DrawingView['turns']
+}
+
+const azimuthOf = (turns: number, projection: Projection) => (projection === 'plan' ? 0 : Math.PI / 4) + turns * QUARTER
 
 /** Where the camera sits relative to its target, as OrbitControls measures it. */
 function direction(azimuth: number, polar: number, out = new Vector3()) {
@@ -112,6 +120,8 @@ export function AxoControls({ bounds }: AxoControlsProps) {
   const invalidate = useThree((state) => state.invalidate)
   const goal = useRef<Goal | null>(null)
   const framed = useRef(false)
+  /** The first fit's zoom: an opening view's zoom is measured against it. */
+  const fitZoom = useRef(1)
 
   const distance = bounds ? Math.max(bounds.getSize(new Vector3()).length(), 4) * 3 : 60
 
@@ -164,16 +174,44 @@ export function AxoControls({ bounds }: AxoControlsProps) {
     if (!bounds || framed.current || !controls.current) return
     framed.current = true
     const polar = polarOf(navigation.projection)
-    const start = fitGoal(snapAzimuth(Math.PI / 4, navigation.projection), polar) as Goal
+    const opening = navigation.opening
+    const azimuth = opening ? azimuthOf(opening.turns, navigation.projection) : snapAzimuth(Math.PI / 4, navigation.projection)
+    const fit = fitGoal(azimuth, polar) as Goal
+    fitZoom.current = fit.zoom
+    // A saved opening view (viewer settings): its corner, its zoom against this screen's fit, its centre.
+    const start = opening
+      ? { ...fit, zoom: Math.min(16, Math.max(0.3, opening.zoom)) * fit.zoom, target: opening.target ? new Vector3(...opening.target) : fit.target }
+      : fit
     place(start)
     lockPolar(polar)
     const orbit = controls.current
-    orbit.minZoom = start.zoom * 0.3
-    orbit.maxZoom = start.zoom * 16
+    orbit.minZoom = fit.zoom * 0.3
+    orbit.maxZoom = fit.zoom * 16
+    // Panels opening and closing leave a saved view where it is.
+    if (opening) navigation.release()
     invalidate()
     // place, lockPolar and fitGoal only read refs and the camera.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bounds, camera, invalidate])
+
+  // The settings bar reads the view the drawing is settling on.
+  useEffect(() => {
+    navigation.registerViewReader(() => {
+      const view = goal.current ?? current()
+      if (!view || !framed.current) return null
+      const projection = navigation.projection
+      const round = (n: number) => Math.round(n * 1000) / 1000
+      return {
+        projection,
+        turns: turnsOf(view.azimuth, projection),
+        zoom: round(view.zoom / fitZoom.current),
+        target: [round(view.target.x), round(view.target.y), round(view.target.z)],
+      }
+    })
+    return () => navigation.registerViewReader(null)
+    // current reads refs and the camera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera])
 
   // Overlay buttons and keys.
   useEffect(

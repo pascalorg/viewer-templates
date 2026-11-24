@@ -24,6 +24,11 @@ function setTarget(next: MoodId | null) {
 }
 
 /** The mood the sky is gliding to, or null when it is at rest. */
+export function glideTarget(): MoodId | null {
+  return target
+}
+
+/** The mood the sky is gliding to, or null when it is at rest. */
 export function useGlideTarget(): MoodId | null {
   return useSyncExternalStore((listener) => {
     listeners.add(listener)

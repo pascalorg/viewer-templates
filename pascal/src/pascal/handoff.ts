@@ -1,6 +1,7 @@
 /** Browser-only protocol plumbing, with no framework or renderer dependencies. */
 export type AccessMode = 'session' | 'share'
-export type Entry = { project: string; viewer: string; access: AccessMode | 'anonymous' }
+/** `configure`: a manager opened the viewer to customise it (Pascal's Share popover, Customize). */
+export type Entry = { project: string; viewer: string; access: AccessMode | 'anonymous'; configure: boolean }
 export type Descriptor = { viewer_id: string; redirect_uri: string }
 export type Transaction = {
   verifier: string
@@ -14,6 +15,8 @@ export type Transaction = {
   returnPath: string
   renewal?: boolean
   signIn?: boolean
+  /** Asked for `scope=configure`; session access only. */
+  configure?: boolean
 }
 export type Credential = {
   access_token: string
@@ -26,6 +29,8 @@ export type StoredCredential = Credential & {
   origin: string
   access: AccessMode
   renewalAttempted: boolean
+  /** Granted `scope=configure`: may save viewer settings. Absent on every other credential. */
+  configure?: boolean
 }
 
 export class ReopenRequired extends Error {
@@ -72,6 +77,7 @@ export function readTransaction(issuer: string): Transaction | null {
     !['session', 'share'].includes(value.access || '') ||
     typeof value.createdAt !== 'number' || typeof value.returnPath !== 'string' ||
     typeof value.redirect_uri !== 'string' ||
+    (value.configure !== undefined && (typeof value.configure !== 'boolean' || (value.configure && value.access !== 'session'))) ||
     !/^[A-Za-z0-9_-]{43}$/.test(value.state || '') ||
     !/^[A-Za-z0-9_-]{43}$/.test(value.verifier || '')
   ) throw new ReopenRequired()
@@ -119,7 +125,12 @@ export function detectEntry(): Entry | null {
     !['project', 'viewer', 'access'].every((key) => query.getAll(key).length === 1 && query.get(key)) ||
     !['session', 'share', 'anonymous'].includes(access || '')
   ) throw new ReopenRequired(access === 'share' ? 'share' : 'session')
-  return { project: query.get('project')!, viewer: query.get('viewer')!, access: access as Entry['access'] }
+  // `configure=1` comes only with session access; anything else is not a link Pascal makes.
+  const configure = query.has('configure')
+  if (configure && (query.getAll('configure').length !== 1 || query.get('configure') !== '1' || access !== 'session')) {
+    throw new ReopenRequired(access === 'share' ? 'share' : 'session')
+  }
+  return { project: query.get('project')!, viewer: query.get('viewer')!, access: access as Entry['access'], configure }
 }
 
 /** Only local paths survive the round trip; protocol-relative paths and callback material do not. */
@@ -135,9 +146,18 @@ function base64url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+let navigating = false
+
+/** True once this page is leaving for Pascal's authorize page: an unsaved-changes prompt must not hold it. */
+export function handoffNavigating(): boolean {
+  return navigating
+}
+
 export async function startAuthorize(
   issuer: string, descriptor: Descriptor, project: string, access: AccessMode, renewal = false, signIn = false,
+  configure = false,
 ): Promise<void> {
+  if (configure && (access !== 'session' || signIn)) throw new ReopenRequired(access)
   const state = base64url(crypto.getRandomValues(new Uint8Array(32)))
   const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)))
   const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))))
@@ -147,10 +167,14 @@ export async function startAuthorize(
     returnUrl.searchParams.set('viewer', descriptor.viewer_id)
     returnUrl.searchParams.set('access', access)
   }
+  // Configure mode survives the round trip in the return path; nothing else asks for it.
+  if (configure) returnUrl.searchParams.set('configure', '1')
+  else returnUrl.searchParams.delete('configure')
   const transaction: Transaction = {
     verifier, state, issuer, viewer: descriptor.viewer_id, project,
     redirect_uri: descriptor.redirect_uri, access, createdAt: Date.now(),
     returnPath: localReturnPath(returnUrl.pathname + returnUrl.search + returnUrl.hash), renewal, signIn,
+    ...(configure ? { configure } : {}),
   }
   sessionStorage.setItem(transactionKey(issuer), JSON.stringify(transaction))
   const url = new URL('/viewer/authorize', issuer)
@@ -159,6 +183,8 @@ export async function startAuthorize(
     code_challenge_method: 'S256', state, redirect_uri: descriptor.redirect_uri,
   }).toString()
   if (access === 'session') url.searchParams.set('interaction', 'sign_in')
+  if (configure) url.searchParams.set('scope', 'configure')
+  navigating = true
   window.top!.location.href = url.href
 }
 
@@ -170,7 +196,8 @@ export function readCredential(issuer: string, viewer: string, project: string):
     stored.origin !== location.origin || !['session', 'share'].includes(stored.access || '') ||
     typeof stored.access_token !== 'string' || !stored.access_token.startsWith('pvh_') ||
     typeof stored.expires_at !== 'string' || !Number.isFinite(Date.parse(stored.expires_at)) ||
-    typeof stored.renewalAttempted !== 'boolean'
+    typeof stored.renewalAttempted !== 'boolean' ||
+    (stored.configure !== undefined && (stored.configure !== true || stored.access !== 'session'))
   ) throw new ReopenRequired(stored.access === 'share' ? 'share' : 'session')
   return stored as StoredCredential
 }
@@ -228,7 +255,8 @@ export async function exchangeCallback(
             (returnQuery.getAll('viewer').length !== 1 || returnQuery.get('viewer') !== transaction.viewer ||
               returnQuery.getAll('access').length !== 1 || ![access, 'anonymous'].includes(returnQuery.get('access') || '')))
         : returnQuery.get('project') !== project || returnQuery.get('viewer') !== transaction.viewer ||
-          returnQuery.get('access') !== access)
+          returnQuery.get('access') !== access ||
+          returnQuery.getAll('configure').length > 1 || returnQuery.get('configure') !== (transaction.configure === true ? '1' : null))
     ) throw new ReopenRequired(access)
     if (callback.error !== null) {
       history.replaceState(history.state, '', returnPath)
@@ -238,18 +266,21 @@ export async function exchangeCallback(
       method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: callback.code, code_verifier: transaction.verifier, viewer: transaction.viewer, redirect_uri: transaction.redirect_uri }),
     })
-    const body = await response.json() as Partial<Credential> & { token_type?: string; revision?: string }
+    const body = await response.json() as Partial<Credential> & { token_type?: string; revision?: string; scope?: unknown }
     if (
       !response.ok || typeof body.access_token !== 'string' || !body.access_token.startsWith('pvh_') ||
       body.project_id !== project || body.viewer_id !== transaction.viewer ||
       body.token_type !== 'Bearer' || body.revision !== 'published' ||
       typeof body.expires_at !== 'string' || !Number.isFinite(Date.parse(body.expires_at)) ||
-      Date.parse(body.expires_at) <= Date.now()
+      Date.parse(body.expires_at) <= Date.now() ||
+      // Asked for configure and not granted it: reopen, never silently continue as a reader.
+      (transaction.configure === true && body.scope !== 'configure')
     ) throw new ReopenRequired(access)
     const credential: StoredCredential = {
       access_token: body.access_token, expires_at: body.expires_at!,
       project_id: project, viewer_id: transaction.viewer, issuer, origin: location.origin, access,
       renewalAttempted: transaction.renewal === true,
+      ...(transaction.configure === true ? { configure: true } : {}),
     }
     storeCredential(credential)
     history.replaceState(history.state, '', returnPath)

@@ -11,10 +11,11 @@ export const cors = {
   'access-control-allow-headers': 'Authorization, Content-Type',
 }
 
-export function sceneBody(overrides: { expiresAt?: string; bake?: object; graph?: object } = {}) {
+export function sceneBody(overrides: { expiresAt?: string; bake?: object; graph?: object; settings?: unknown } = {}) {
   const expiresAt = overrides.expiresAt ?? new Date(Date.now() + 10 * 60_000).toISOString()
   return JSON.stringify({
     ...scene,
+    ...('settings' in overrides ? { settings: overrides.settings } : {}),
     graph: overrides.graph ?? scene.graph,
     bake: overrides.bake ?? {
       ...scene.bake,

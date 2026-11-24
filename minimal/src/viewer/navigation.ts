@@ -18,6 +18,18 @@ type Listener = () => void
 /** How much of each side of the screen the overlay's panels cover, in CSS pixels. */
 export type Insets = { top: number; right: number; bottom: number; left: number }
 
+/**
+ * A view of the drawing as navigation knows it, which is what an opening view saves: the
+ * projection, the corner (quarter turns from the first one), the zoom against the fit (1 frames
+ * the building) and the point at the centre of the screen.
+ */
+export type DrawingView = {
+  projection: Projection
+  turns: 0 | 1 | 2 | 3
+  zoom: number
+  target?: [number, number, number]
+}
+
 let projection: Projection = 'axonometric'
 let insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 }
 /**
@@ -25,6 +37,9 @@ let insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 }
  * panel opens or closes, it is framed again in the space the panels now leave.
  */
 let lastFrame: Extract<NavigationCommand, { type: 'fit' | 'focus' }> | null = { type: 'fit' }
+/** The view the drawing opens on (viewer settings); none frames the building from the first corner. */
+let opening: DrawingView | null = null
+let readView: (() => DrawingView | null) | null = null
 const stateListeners = new Set<Listener>()
 const commandListeners = new Set<(command: NavigationCommand) => void>()
 
@@ -70,6 +85,25 @@ export const navigation = {
   },
   get insets() {
     return insets
+  },
+  /** Set before the drawing first frames: it opens on this view instead of the fit. */
+  setOpening(view: DrawingView | null) {
+    opening = view
+    if (view && view.projection !== projection) {
+      projection = view.projection
+      for (const listener of stateListeners) listener()
+    }
+  },
+  get opening() {
+    return opening
+  },
+  /** The controls register how to read the view they show (or are easing to). */
+  registerViewReader(reader: (() => DrawingView | null) | null) {
+    readView = reader
+  },
+  /** The view on screen, as an opening view would save it; null before the drawing is framed. */
+  currentView(): DrawingView | null {
+    return readView?.() ?? null
   },
   onCommand(listener: (command: NavigationCommand) => void) {
     commandListeners.add(listener)

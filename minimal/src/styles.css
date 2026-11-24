@@ -1529,3 +1529,24 @@ kbd {
   transform: translateX(-50%);
   color: #b42318;
 }
+
+/* The viewer settings bar (src/pascal-react/settings-bar.css), in the overlay's tokens. Managers
+   only; top centre, below the title where the screen is narrow. */
+.app {
+  --pascal-settings-bg: var(--surface);
+  --pascal-settings-text: var(--text);
+  --pascal-settings-muted: var(--muted);
+  --pascal-settings-border: var(--border);
+  --pascal-settings-accent: var(--accent);
+  --pascal-settings-accent-text: var(--accent-text);
+  --pascal-settings-shadow: var(--shadow);
+  --pascal-settings-radius: var(--r-panel);
+  --pascal-settings-top: var(--edge);
+  --pascal-settings-z: 15;
+}
+
+@media (max-width: 1023px) {
+  .app {
+    --pascal-settings-top: calc(var(--edge) + 112px);
+  }
+}

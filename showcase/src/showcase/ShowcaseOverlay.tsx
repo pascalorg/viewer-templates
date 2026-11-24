@@ -15,6 +15,7 @@ import { familyLabel } from './families'
 import { InteractionHelp } from './InteractionHelp'
 import { IntroSlot } from './IntroSlot'
 import { MobileControls } from './MobileControls'
+import type { OpeningView } from './opening'
 import { availableModes, modeOf, moodOf, positionOf, sliderOf, type ModeId, type MoodId } from './modes'
 import { useChromeSounds } from './sounds'
 import { WalkHud } from './WalkHud'
@@ -65,7 +66,7 @@ function useFullscreen() {
  * The showcase chrome over the scene: sound and full screen, the dial (or the phone's bottom bar)
  * and help. Every control reads and writes the public viewer store.
  */
-export function ShowcaseOverlay({ levelCount, nodes, families, source, bakedObjects, introAllowed, hideControls }: {
+export function ShowcaseOverlay({ levelCount, nodes, families, source, bakedObjects, introAllowed, hideControls, opening = null }: {
   levelCount: number
   /** The published graph. */
   nodes: Readonly<Record<string, AnyNode>>
@@ -78,6 +79,8 @@ export function ShowcaseOverlay({ levelCount, nodes, families, source, bakedObje
   /** False when the page opens on a given camera (`?camera=`): no intro over it. */
   introAllowed: boolean
   hideControls: boolean
+  /** The saved opening view (viewer settings): what the page settles into and Reset view returns to. */
+  opening?: OpeningView | null
 }) {
   const { compact, phonePortrait, coarsePointer } = useLayout()
   const { fullscreen, toggle: toggleFullscreen } = useFullscreen()
@@ -95,7 +98,7 @@ export function ShowcaseOverlay({ levelCount, nodes, families, source, bakedObje
   const glideTarget = useGlideTarget()
   const sky = moodOf(view, moodMinutes)
   const mood = glideTarget ?? sky
-  const intro = useIntro({ enabled: features.intro && introAllowed, frameOnArrival: introAllowed, levelCount, context })
+  const intro = useIntro({ enabled: features.intro && introAllowed, frameOnArrival: introAllowed, levelCount, context, opening })
   const cut = useCutControls(context, plane, features.cutView && mode === 'cut')
 
   // Discovery waits for the intro to hand the scene over.
@@ -140,8 +143,8 @@ export function ShowcaseOverlay({ levelCount, nodes, families, source, bakedObje
   }
   const reset = () => {
     setMenu(null)
-    applyDefaultView(levelCount, context)
-    frameSettled(context, levelCount)
+    applyDefaultView(levelCount, context, opening)
+    frameSettled(context, levelCount, undefined, { opening })
   }
   const toggleSound = () => {
     useAudioSettings.getState().setMuted(!muted)

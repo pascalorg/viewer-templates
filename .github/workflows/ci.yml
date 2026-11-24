@@ -111,3 +111,5 @@ jobs:
       - run: diff -r listing/src/pascal pascal/src/pascal
       - run: diff -r listing/src/pascal showcase/src/pascal
       - run: diff -r listing/src/pascal minimal/src/pascal
+      - run: diff -r listing/src/pascal-react showcase/src/pascal-react
+      - run: diff -r listing/src/pascal-react minimal/src/pascal-react

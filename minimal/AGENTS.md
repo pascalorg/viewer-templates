@@ -14,6 +14,8 @@ The read API contract, what the baked GLB contains, access, deployment and the s
 | Path | Owns |
 | --- | --- |
 | `src/pascal/` | The API client and access helpers, byte-identical to `listing/src/pascal/`. No React, no three.js. |
+| `src/pascal-react/` | `useViewerSettings` and `SettingsBar`, byte-identical to `listing/src/pascal-react/`. |
+| `src/settings.ts` | This template's viewer settings: the opening view's schema and defaults. |
 | `src/useListing.ts` | Loading flow: choose a ready bake or the live graph; poll while baking. |
 | `src/App.tsx` | Screens, and the scene's state: floor, room, item, panels, tool; the keyboard map; the panels' insets for framing. |
 | `src/spaces.ts` | Floors, rooms (area, size, ceiling, Pascal's room details) and their contents (items and furniture), read from the graph alone, so both renderers list the same. |
@@ -22,7 +24,7 @@ The read API contract, what the baked GLB contains, access, deployment and the s
 | `src/viewer/style.ts` | The look: paper, ink, accent, a tone per surface role, the two lights, and the shared materials. |
 | `src/viewer/InkPass.tsx` | Takes over rendering in the baked canvas: a normal and depth pass (meshes in `inkMaterials` with their own material), the scene, then the ink on top. |
 | `src/viewer/AxoControls.tsx` | Navigation, for both renderers: orthographic orbit around the vertical, corner snapping, plan, zoom to pointer, ground pan, double-click zoom, framing a selected room. |
-| `src/viewer/navigation.ts` | The store the overlay buttons and keys use to drive `AxoControls`, and the panels' insets framing avoids. |
+| `src/viewer/navigation.ts` | The store the overlay buttons and keys use to drive `AxoControls`, the panels' insets framing avoids, and the opening view (`setOpening`, `currentView`). |
 | `src/viewer/roomTags.ts`, `RoomTagProjector.tsx` | The pinned room tags: which rooms the overlay tags, and the canvas side that projects each one's floor point to the screen, for both renderers. |
 | `src/viewer/measure.ts`, `MeasureTool.tsx` | The measure tool: its store (points, preview, their screen positions), and the canvas side that picks and snaps points, for both renderers. |
 | `src/viewer/Viewer.tsx` | The baked canvas: orthographic camera, camera-relative light, `Model`, `AxoControls`, `InkPass`. |
@@ -262,7 +264,28 @@ panels become sheets above the bar.
   zooms in twice on the point under the pointer.
 
 To add a view (an elevation, say), add a `Projection` in `navigation.ts`, its polar angle in
-`polarOf` and its snapping offset in `snapAzimuth`, then a button in `Dock` (`ui/Dock.tsx`).
+`polarOf` and its snapping offset in `snapAzimuth`, then a button in `Dock` (`ui/Dock.tsx`), and
+let `OpeningSchema` in `src/settings.ts` accept it.
+
+## Viewer settings
+
+The model, how a manager enters Customize mode, the hook and the bar, and how to add a setting are
+in [listing's AGENTS.md](../listing/AGENTS.md#viewer-settings). This template's one setting is the
+opening view, as navigation knows it, not a free camera:
+
+```json
+{ "v": 1, "opening": { "projection": "axonometric", "turns": 1, "zoom": 1.6, "target": [x, y, z] } }
+```
+
+`projection` is `axonometric` or `plan`; `turns` (0–3) is the corner (or, in plan, the side) in
+quarter turns from the first one; `zoom` is against the fit (1 frames the building, 0.3–16 like
+the controls' limits), so it reads the same on any screen; `target` is the point at the centre of
+the screen (optional: without it the fit's centre). `App` passes the saved view (a manager's draft)
+to `navigation.setOpening` before the drawing first frames; `AxoControls` then opens there instead
+of the first fit and releases the framing, so panels opening don't move it. **Set current view as
+opening view** stores `navigation.currentView()` (the view the controls are easing to); **Reset**
+drops `opening`. An invalid view opens on the first corner, as before. The bar sits top centre,
+below the title on screens under 1,024 px.
 
 ## Rules
 

@@ -18,21 +18,26 @@ import { useEffect, useMemo, useState } from 'react'
 import { Vector3 } from 'three'
 import { PASCAL_BASE_URL } from '../config'
 import { findAncestorOfType, type SceneResponse, zoneArea, zoneContains, zoneInfo } from '../pascal'
+import type { OpeningCamera as OpeningPose } from '../settings'
+import { OpeningCamera, ViewReader } from './OpeningCamera'
 import type { RoomHover } from './semantics'
 
 type SceneInput = Parameters<ReturnType<typeof useScene.getState>['setScene']>
 type LiveViewerProps = {
   scene: SceneResponse
   levelId: string | null
+  /** The saved opening view; without it the runtime's default camera. */
+  opening?: OpeningPose
   onError: (error: unknown) => void
   onHover: (hover: (RoomHover & { x: number; y: number }) | null) => void
   onSceneReadyChange: (ready: boolean) => void
 }
 
 configureViewer({ assetsBaseUrl: PASCAL_BASE_URL })
+const DEFAULT_TARGET: [number, number, number] = [0, 1, 0]
 const pluginReady = loadPlugin(renderPlugin)
 
-export function LiveViewer({ scene, levelId, onError, onHover, onSceneReadyChange }: LiveViewerProps) {
+export function LiveViewer({ scene, levelId, opening, onError, onHover, onSceneReadyChange }: LiveViewerProps) {
   const [loaded, setLoaded] = useState<SceneResponse | null>(null)
 
   useEffect(() => {
@@ -137,7 +142,9 @@ export function LiveViewer({ scene, levelId, onError, onHover, onSceneReadyChang
       sceneReadyKey={`${scene.project.id}:${scene.revision.version}`}
       selectionManager="custom"
     >
-      <OrbitControls makeDefault target={[0, 1, 0]} />
+      <OrbitControls makeDefault target={opening?.target ?? DEFAULT_TARGET} />
+      {opening ? <OpeningCamera pose={opening} /> : null}
+      <ViewReader />
       <ListingCutaway scene={scene} levelId={levelId} />
     </Viewer>
   )

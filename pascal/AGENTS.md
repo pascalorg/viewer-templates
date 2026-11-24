@@ -98,6 +98,14 @@ Pascal" or "Reopen your share link" screen; it never falls back to an anonymous 
 arrives later bumps `runtimeRevision`: the live graph is set again and the bake's replacement
 nodes are rebuilt. Kinds no registered plugin draws are counted and warned once per kind.
 
+## Viewer settings
+
+`src/pascal/` carries viewer settings like every template (Customize mode, `scope=configure`,
+`saveSettings`; see [listing's AGENTS.md](../listing/AGENTS.md#viewer-settings)), but this template
+uses none yet: it ignores the read's `settings` and has no `src/pascal-react/`. To add the opening
+view, copy `src/pascal-react/` from `listing` (and its `diff -r` line in CI) and follow
+[`showcase`](../showcase/AGENTS.md#viewer-settings), whose assembly this one shares.
+
 ## Sign in with Pascal
 
 What the visitor sees, what the site and project need, and the three helpers (`canSignIn`,

@@ -293,3 +293,21 @@ code {
   transform: translateX(-50%);
   color: #b42318;
 }
+
+/* The viewer settings bar (src/pascal-react/settings-bar.css), in this template's tokens. Managers
+   only; top centre, below the header on narrow screens. */
+.app {
+  --pascal-settings-bg: var(--surface);
+  --pascal-settings-text: var(--text);
+  --pascal-settings-muted: var(--muted);
+  --pascal-settings-border: var(--border);
+  --pascal-settings-accent: var(--accent);
+  --pascal-settings-accent-text: var(--accent-text);
+  --pascal-settings-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .app {
+    --pascal-settings-top: 96px;
+  }
+}

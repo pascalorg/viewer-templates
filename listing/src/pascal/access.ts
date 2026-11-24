@@ -70,7 +70,9 @@ async function renew(credential: StoredCredential, descriptor: Descriptor | null
   rememberRejection(credential)
   rejected.set(JSON.stringify([credential.issuer, credential.project_id]), credential.access)
   if (!descriptor || credential.renewalAttempted) throw new ReopenRequired(credential.access)
-  await startAuthorize(credential.issuer, descriptor, credential.project_id, credential.access, true)
+  // A configure credential renews as one: the manager keeps customising after the round trip.
+  await startAuthorize(credential.issuer, descriptor, credential.project_id, credential.access, true, false,
+    credential.configure === true)
   return { kind: 'opening' }
 }
 
@@ -101,6 +103,11 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
       }
       if (descriptor) {
         const credential = readCredential(issuer, descriptor.viewer_id, projectId)
+        // Customize and Open from Pascal ask for different credentials; an entry gets the one it asked for.
+        if (credential && entry?.access === 'session' && entry.configure !== (credential.configure === true)) {
+          await startAuthorize(issuer, descriptor, projectId, 'session', false, false, entry.configure)
+          return { kind: 'opening' }
+        }
         if (credential) {
           if (Date.parse(credential.expires_at) - Date.now() <= RENEW_MARGIN) return renew(credential, descriptor)
           return { kind: 'credential', credential }
@@ -110,7 +117,7 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
       }
       if (entry && entry.access !== 'anonymous') {
         if (!descriptor) throw new ReopenRequired(mode)
-        await startAuthorize(issuer, descriptor, projectId, entry.access)
+        await startAuthorize(issuer, descriptor, projectId, entry.access, false, false, entry.configure)
         return { kind: 'opening' }
       }
       return { kind: 'anonymous' }

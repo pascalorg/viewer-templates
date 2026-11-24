@@ -33,6 +33,19 @@ Pascal runs `showcase`, `listing` and `minimal` itself as official viewers that 
 
 Each template's `AGENTS.md` explains the read, what the 3D file contains and how to customise it, for you and for your coding agent.
 
+## Viewer settings
+
+A project's managers can customise how a viewer presents their project, and every later visitor
+gets it. In Pascal's Share popover, **Customize** opens the viewer in configure mode: a compact bar
+appears, the manager sets things up and presses Save. Settings are saved per project and viewer,
+readable by anyone who can read the project (never put secrets in them), and at most 256 KB.
+
+`showcase`, `listing` and `minimal` use it for the opening view: the camera (in `showcase` also
+the time of day and the mode; in `minimal` the corner, plan and zoom). `src/pascal/settings.ts`
+saves, and `src/pascal-react/` has the `useViewerSettings` hook and the `SettingsBar` to add your
+own settings. [listing's AGENTS.md](listing/AGENTS.md#viewer-settings) explains the model and walks
+through adding one.
+
 ## Rules every template follows
 
 - Never put a Pascal API key in the browser. Private projects need a server you control.

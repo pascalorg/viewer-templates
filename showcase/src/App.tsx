@@ -29,7 +29,7 @@ function Project({ projectId }: { projectId: string }) {
       // A late plugin bumps runtimeRevision without remounting; the viewer rebuilds what it draws.
       const glbUrl = state.kind === 'baked' ? state.url : null
       return <ProjectViewer key={`${state.scene.revision.modelId}:${state.scene.revision.version}:${glbUrl}`}
-        scene={state.scene} glbUrl={glbUrl} runtimeRevision={state.runtimeRevision} />
+        scene={state.scene} glbUrl={glbUrl} runtimeRevision={state.runtimeRevision} token={state.token} />
     }
   }
 }

@@ -8,9 +8,11 @@ import { useSyncExternalStore } from 'react'
  * canvas's clear colour is ever on screen.
  */
 type Placement = (position: [number, number, number], target: [number, number, number]) => void
+type Pose = { position: [number, number, number]; target: [number, number, number] }
 
 const state = { stagedAt: null as number | null, frames: 0, presented: false }
 let place: Placement | null = null
+let readPose: (() => Pose) | null = null
 const listeners = new Set<() => void>()
 const notify = () => { for (const listener of listeners) listener() }
 
@@ -20,6 +22,16 @@ const PRESENT_AFTER_FRAMES = 2
 /** The canvas registers instant camera placement (no controls transition) and counts frames. */
 export function registerPlacement(placement: Placement | null) {
   place = placement
+}
+
+/** The canvas registers how to read the orbit camera's pose (for the opening view setting). */
+export function registerPoseReader(reader: (() => Pose) | null) {
+  readPose = reader
+}
+
+/** The orbit camera's position and target; null while the controls are unmounted (walking). */
+export function cameraPose(): Pose | null {
+  return readPose?.() ?? null
 }
 
 /** Puts the camera at a pose at once; false when the controls are not mounted yet. */

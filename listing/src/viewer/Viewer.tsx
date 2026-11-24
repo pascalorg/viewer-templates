@@ -11,7 +11,9 @@ import {
 } from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { SceneGraph } from '../pascal'
+import type { OpeningCamera } from '../settings'
 import { Model, type ModelInfo } from './Model'
+import { placeOpeningCamera, ViewReader } from './OpeningCamera'
 import type { RoomHover } from './semantics'
 
 export type ViewerProps = {
@@ -19,13 +21,15 @@ export type ViewerProps = {
   graph: SceneGraph
   levelId: string | null
   label: string
+  /** The saved opening view; without it the camera frames the model. */
+  opening?: OpeningCamera
   onReady: (info: ModelInfo) => void
   onError: (error: unknown) => void
   onHover: (hover: (RoomHover & { x: number; y: number }) | null) => void
 }
 
 /** The 3D canvas: the baked model under neutral studio light. Swap this file to restyle. */
-export function Viewer({ label, onReady, ...modelProps }: ViewerProps) {
+export function Viewer({ label, onReady, opening, ...modelProps }: ViewerProps) {
   const [model, setModel] = useState<ModelInfo | null>(null)
   const handleReady = useCallback(
     (info: ModelInfo) => {
@@ -50,8 +54,9 @@ export function Viewer({ label, onReady, ...modelProps }: ViewerProps) {
       <color args={['#eef0f4']} attach="background" />
       <StudioEnvironment />
       <Model {...modelProps} onReady={handleReady} />
-      {model ? <Stage model={model} /> : null}
+      {model ? <Stage model={model} opening={opening} /> : null}
       <OrbitControls enableDamping makeDefault maxPolarAngle={Math.PI / 2 - 0.05} />
+      <ViewReader />
     </Canvas>
   )
 }
@@ -84,7 +89,7 @@ const SUN = new Vector3(-0.5, 1, -0.15).normalize()
  * soft shadow onto the site's own ground, or onto a shadow-only floor when the
  * scene has none.
  */
-function Stage({ model }: { model: ModelInfo }) {
+function Stage({ model, opening }: { model: ModelInfo; opening?: OpeningCamera }) {
   const { bounds, ground } = model
   const camera = useThree((state) => state.camera) as PerspectiveCamera
   const controls = useThree((state) => state.controls) as unknown as {
@@ -98,14 +103,22 @@ function Stage({ model }: { model: ModelInfo }) {
 
   useEffect(() => {
     const distance = (radius / Math.sin((camera.fov * Math.PI) / 360)) * 0.9
+    camera.near = distance / 100
+    camera.far = distance * 10
+    if (opening) {
+      // A saved opening view (viewer settings) replaces the framing; keep it inside the far plane.
+      camera.far = Math.max(camera.far, new Vector3(...opening.position).distanceTo(sphere.center) * 2 + radius)
+      placeOpeningCamera(camera, controls, opening)
+      return
+    }
     camera.position
       .copy(sphere.center)
       .addScaledVector(new Vector3(1, 0.75, 1.2).normalize(), distance)
-    camera.near = distance / 100
-    camera.far = distance * 10
     camera.updateProjectionMatrix()
     controls?.target.copy(sphere.center)
     controls?.update()
+    // The opening applies once, as the model arrives; later changes are the manager's draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera, controls, radius, sphere])
 
   useEffect(() => {

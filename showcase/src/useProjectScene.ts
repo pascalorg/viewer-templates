@@ -13,8 +13,9 @@ export type ProjectSceneState =
   | { kind: 'error'; error: PascalError; anonymous: boolean }
   | { kind: 'no-file'; scene: SceneResponse }
   | { kind: 'downloading'; scene: SceneResponse; progress: number | null }
-  | { kind: 'live'; scene: SceneResponse; runtimeRevision: number }
-  | { kind: 'baked'; scene: SceneResponse; url: string; runtimeRevision: number }
+  /** `token`: the credential the scene was read with, if any (viewer settings save with it). */
+  | { kind: 'live'; scene: SceneResponse; runtimeRevision: number; token?: string }
+  | { kind: 'baked'; scene: SceneResponse; url: string; runtimeRevision: number; token?: string }
 
 /**
  * Assembly supplies a stable runtime object. Before either resolved state is published,
@@ -188,8 +189,8 @@ export function useProjectScene(
       active.current = resources
       pending = null
       publish(kind === 'baked'
-        ? { kind, scene, url: resources.url!, runtimeRevision: resources.revision }
-        : { kind, scene, runtimeRevision: resources.revision })
+        ? { kind, scene, url: resources.url!, runtimeRevision: resources.revision, token }
+        : { kind, scene, runtimeRevision: resources.revision, token })
       schedule(scene)
     }
 

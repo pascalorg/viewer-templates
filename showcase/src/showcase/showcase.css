@@ -456,3 +456,20 @@ main .dark.mt-16.whitespace-nowrap:has(kbd) { display:none; }
   .sc-chrome *, .sc-chrome *::after, .sc-loading * { animation:none !important; transition:none !important; }
   .sc-loader-shimmer { background:none; color:inherit; }
 }
+
+/* ── Viewer settings bar (src/pascal-react/settings-bar.css), managers only ── */
+.sc {
+  --pascal-settings-bg:#1b1e24f0;
+  --pascal-settings-text:var(--sc-ink);
+  --pascal-settings-muted:#b9c0ca;
+  --pascal-settings-border:var(--sc-line);
+  --pascal-settings-accent:#f2f3f5;
+  --pascal-settings-accent-text:#17191c;
+  --pascal-settings-shadow:0 5px 18px #0000002e;
+  --pascal-settings-top:var(--sc-edge-top);
+  --pascal-settings-z:45;
+}
+/* Below the sound and full screen buttons where the screen is narrow. */
+@media (max-width:760px) {
+  .sc { --pascal-settings-top:calc(var(--sc-edge-top) + 104px); }
+}

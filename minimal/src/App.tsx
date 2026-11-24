@@ -13,6 +13,8 @@ import {
 import { PASCAL_BASE_URL, PASCAL_TOKEN_URL, projectIdFromLocation } from './config'
 import { hasHandoffCallback } from './pascal/handoff'
 import { canSignIn, signIn, SignInUnavailable, type PascalError, type SceneResponse } from './pascal'
+import { SettingsBar, useViewerSettings } from './pascal-react'
+import { DEFAULT_SETTINGS, parseDrawingSettings } from './settings'
 import { readSpaces, roomContents, thingOf } from './spaces'
 import { Dock, type Tool } from './ui/Dock'
 import { Inspector } from './ui/Inspector'
@@ -104,6 +106,14 @@ function Scene({
     console.error(error)
     setOpenError(true)
   }, [])
+
+  const settings = useViewerSettings({
+    settings: scene.settings, token: state.token, baseUrl: PASCAL_BASE_URL, projectId: scene.project.id,
+    parse: parseDrawingSettings, defaults: DEFAULT_SETTINGS,
+  })
+  // The drawing opens on the saved view, set before it first frames; a manager's later changes
+  // don't move it.
+  useState(() => navigation.setOpening(settings.value.opening ?? null))
 
   const room = roomId ? (spaces.rooms.get(roomId) ?? null) : null
   const floor = room ? (spaces.floors.find((candidate) => candidate.id === room.levelId) ?? null) : null
@@ -351,6 +361,18 @@ function Scene({
           <MeasureMarks />
           <Help onClose={() => setHelpOpen(false)} open={helpOpen} />
           <Toast message={toast} />
+          <SettingsBar settings={settings}>
+            <button className="pascal-settings-button" type="button" onClick={() => {
+              const view = navigation.currentView()
+              if (view) settings.set((current) => ({ ...current, opening: view }))
+            }}>
+              Set current view as opening view
+            </button>
+            <button aria-label="Reset opening view" className="pascal-settings-button" disabled={!settings.value.opening}
+              onClick={() => settings.set(({ opening: _, ...rest }) => rest)} type="button">
+              Reset
+            </button>
+          </SettingsBar>
         </>
       ) : null}
 
