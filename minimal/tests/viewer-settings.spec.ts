@@ -77,7 +77,7 @@ test('a visitor opens on the saved view: plan, its side, zoom and centre', async
   // Straight down onto the saved centre.
   expect(x).toBeCloseTo(OPENING.target[0]!, 1)
   expect(z).toBeCloseTo(OPENING.target[2]!, 1)
-  await expect(page.getByRole('region', { name: 'Customize this viewer' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Customize' })).toHaveCount(0)
 })
 
 for (const [name, body] of [
@@ -99,11 +99,11 @@ test('a manager saves the view on screen with the read revision, and a draft sur
   const writes = await settingsWrites(page, (body) => ({ json: { settings: settings(body.data, { revision: 1, canConfigure: true }) } }))
   await page.goto(configureEntry)
   await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
-  const bar = page.getByRole('region', { name: 'Customize this viewer' })
-  await expect(bar.getByRole('button', { name: 'Reset opening view' })).toBeDisabled()
+  const bar = page.getByRole('region', { name: 'Customize' })
+  await expect(bar.getByRole('button', { name: 'Clear opening view' })).toBeDisabled()
   await page.keyboard.press('ArrowRight')
   await plan(page).click()
-  await bar.getByRole('button', { name: 'Set current view as opening view' }).click()
+  await bar.getByRole('button', { name: 'Use current view' }).click()
   await expect(bar.getByRole('status')).toHaveText('Unsaved changes')
 
   page.on('dialog', (dialog) => void dialog.accept())
@@ -131,25 +131,65 @@ test('a conflict says so and loads the latest', async ({ page }) => {
     settings: settings({ v: 1, opening: OPENING }, { revision: 4, canConfigure: true }) } }))
   await page.goto(configureEntry)
   await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
-  const bar = page.getByRole('region', { name: 'Customize this viewer' })
-  await bar.getByRole('button', { name: 'Set current view as opening view' }).click()
+  const bar = page.getByRole('region', { name: 'Customize' })
+  await bar.getByRole('button', { name: 'Use current view' }).click()
   await bar.getByRole('button', { name: 'Save' }).click()
   await expect(bar.getByRole('status')).toHaveText('Someone else saved changes.')
   expect(writes[0]!.revision).toBe(3)
   await bar.getByRole('button', { name: 'Load the latest' }).click()
   await expect(bar.getByRole('button', { name: 'Save' })).toBeDisabled()
-  await expect(bar.getByRole('button', { name: 'Reset opening view' })).toBeEnabled()
+  await expect(bar.getByRole('button', { name: 'Clear opening view' })).toBeEnabled()
 })
 
-test('the bar fits a 360 px screen', async ({ page }) => {
+test('the panel fits a 360 px screen', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 })
   await mockPascal(page, () => ({ body: sceneBody({ settings: settings(null, { revision: 0, canConfigure: true }) }) }))
   await registry(page)
   await seedConfigureCredential(page)
   await page.goto(configureEntry)
   await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
-  const box = (await page.getByRole('region', { name: 'Customize this viewer' }).boundingBox())!
+  const box = (await page.getByRole('region', { name: 'Customize' }).boundingBox())!
   expect(box.x).toBeGreaterThanOrEqual(0)
   expect(box.x + box.width).toBeLessThanOrEqual(360)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360)
+})
+
+test('the panel shows projection, turn and zoom; choosing one turns the drawing and goes in the draft', async ({ page }) => {
+  await mockPascal(page, () => ({ body: sceneBody({ settings: settings({ v: 1 }, { canConfigure: true }) }) }))
+  await registry(page)
+  await seedConfigureCredential(page)
+  const writes = await settingsWrites(page, (body) => ({ json: { settings: settings(body.data, { revision: 4, canConfigure: true }) } }))
+  await page.goto(configureEntry)
+  await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
+  const panel = page.getByRole('region', { name: 'Customize' })
+  await expect(panel.getByRole('group', { name: 'Projection' })).toContainText('Default (axonometric)')
+  await expect(panel.getByRole('group', { name: 'Zoom' })).toContainText('Default (fits the building)')
+  await panel.getByRole('radiogroup', { name: 'Projection' }).getByRole('radio', { name: 'Plan' }).click()
+  await expect(plan(page)).toHaveAttribute('aria-pressed', 'true')
+  await panel.getByRole('radiogroup', { name: 'Turn' }).getByRole('radio', { name: '180°' }).click()
+  await expect(panel.getByRole('group', { name: 'Projection' })).toContainText('Plan')
+  await expect(panel.getByRole('group', { name: 'Turn' })).toContainText('180° round')
+  await expect(panel.getByRole('status')).toHaveText('Unsaved changes')
+  // The drawing turned there too: "Use current view" reads the same turn back.
+  await panel.getByRole('button', { name: 'Use current view' }).click()
+  await expect(panel.getByRole('radiogroup', { name: 'Turn' }).getByRole('radio', { name: '180°' })).toHaveAttribute('aria-checked', 'true')
+  await panel.getByRole('button', { name: 'Fit the building' }).click()
+  await panel.getByRole('button', { name: 'Save' }).click()
+  await expect(panel.getByRole('status')).toHaveText('Saved')
+  expect(writes[0]!.data.opening).toMatchObject({ projection: 'plan', turns: 2, zoom: 1 })
+  expect(writes[0]!.data.opening!.target).toBeUndefined()
+})
+
+test('a manager from Open in Pascal gets a collapsed entry; a visitor without the right gets none', async ({ page }) => {
+  await mockPascal(page, () => ({ body: sceneBody({ settings: { ...settings(null, { revision: 0 }), configureAvailable: true } }) }))
+  await registry(page)
+  await page.addInitScript(({ issuer, project, viewer, token }) => {
+    sessionStorage.setItem(`pascal:credential:${JSON.stringify([issuer, viewer, project, location.origin])}`,
+      JSON.stringify({ issuer, project_id: project, viewer_id: viewer, origin: location.origin, access: 'session',
+        access_token: token, renewalAttempted: false, expires_at: new Date(Date.now() + 3_600_000).toISOString() }))
+  }, { issuer, project, viewer, token })
+  await page.goto(`/?project=${project}&viewer=${viewer}&access=session`)
+  await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('button', { name: 'Customize', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Customize' })).toHaveCount(0)
 })

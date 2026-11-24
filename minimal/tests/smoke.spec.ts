@@ -29,7 +29,7 @@ async function canvasColours(page: Page) {
     const canvas = document.createElement('canvas')
     canvas.width = image.width
     canvas.height = image.height
-    const context = canvas.getContext('2d')!
+    const context = canvas.getContext('2d', { willReadFrequently: true })!
     context.drawImage(image, 0, 0)
     const { data } = context.getImageData(0, 0, image.width, image.height)
     const colours = new Set<number>()
@@ -191,7 +191,7 @@ async function accentPixels(page: Page) {
     const canvas = document.createElement('canvas')
     canvas.width = image.width
     canvas.height = image.height
-    const context = canvas.getContext('2d')!
+    const context = canvas.getContext('2d', { willReadFrequently: true })!
     context.drawImage(image, 0, 0)
     const { data } = context.getImageData(0, 0, image.width, image.height)
     let count = 0
@@ -230,7 +230,7 @@ async function sectionPixels(page: Page) {
     const canvas = document.createElement('canvas')
     canvas.width = image.width
     canvas.height = image.height
-    const context = canvas.getContext('2d')!
+    const context = canvas.getContext('2d', { willReadFrequently: true })!
     context.drawImage(image, 0, 0)
     const { data } = context.getImageData(0, 0, image.width, image.height)
     let count = 0

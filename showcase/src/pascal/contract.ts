@@ -66,6 +66,11 @@ export const ViewerSettingsSchema = z.object({
   data: z.nullable(z.record(z.string(), z.unknown())),
   /** True only when the read carried a live configure credential: show the settings controls. */
   canConfigure: z.boolean(),
+  /**
+   * True when the reader manages the project and may enter Customize (`enterCustomize`): a session
+   * credential whose user can manage it, and whenever `canConfigure` is. Absent on older servers.
+   */
+  configureAvailable: z.catch(z.optional(z.boolean()), undefined),
 })
 export type ViewerSettings = z.infer<typeof ViewerSettingsSchema>
 

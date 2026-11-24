@@ -36,14 +36,16 @@ Each template's `AGENTS.md` explains the read, what the 3D file contains and how
 ## Viewer settings
 
 A project's managers can customise how a viewer presents their project, and every later visitor
-gets it. In Pascal's Share popover, **Customize** opens the viewer in configure mode: a compact bar
-appears, the manager sets things up and presses Save. Settings are saved per project and viewer,
-readable by anyone who can read the project (never put secrets in them), and at most 256 KB.
+gets it. A manager sees a **Customize** tab on the viewer's right edge (Pascal says who may: an
+entry hint, `configure=available`, or the scene read's `configureAvailable`), or opens it from
+Pascal's Share popover. Customize opens a panel with the template's fields and the save state; the
+manager sets things up and presses Save. Settings are saved per project and viewer, readable by
+anyone who can read the project (never put secrets in them), and at most 256 KB.
 
 `showcase`, `listing` and `minimal` use it for the opening view: the camera (in `showcase` also
 the time of day and the mode; in `minimal` the corner, plan and zoom). `src/pascal/settings.ts`
-saves, and `src/pascal-react/` has the `useViewerSettings` hook and the `SettingsBar` to add your
-own settings. [listing's AGENTS.md](listing/AGENTS.md#viewer-settings) explains the model and walks
+saves and `enterCustomize` enters Customize from inside the viewer; `src/pascal-react/` has the
+`useViewerSettings` hook, the `SettingsPanel` and its field blocks to add your own settings. [listing's AGENTS.md](listing/AGENTS.md#viewer-settings) explains the model and walks
 through adding one.
 
 ## Rules every template follows

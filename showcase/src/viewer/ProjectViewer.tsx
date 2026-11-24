@@ -29,21 +29,22 @@ import { type Object3D, Vector3 } from 'three'
 import { PASCAL_BASE_URL, viewerFlagsFromLocation } from '../config'
 import type { SceneResponse } from '../pascal'
 import { listLevels } from '../pascal/graph'
-import { SettingsBar, useViewerSettings } from '../pascal-react'
+import { SettingsPanel, useViewerSettings } from '../pascal-react'
 import { pluginInstallStateOf, publishedSceneSetup } from '../runtime/plugins'
 import { DiscoveryScene, renderCallout, reportBakedPick } from '../showcase/discovery/DiscoveryScene'
 import { interactiveIds as findInteractive } from '../showcase/discovery/interactive'
 import { Loader } from '../showcase/Loader'
-import { availableModes, modeOf } from '../showcase/modes'
-import { DEFAULT_SETTINGS, parseShowcaseSettings, resolveOpening, roundPose } from '../showcase/opening'
-import { cameraPose, frameRendered, registerPlacement, registerPoseReader, resetPresentation, usePresented } from '../showcase/presentation'
+import { availableModes } from '../showcase/modes'
+import { DEFAULT_SETTINGS, parseShowcaseSettings, resolveOpening } from '../showcase/opening'
+import { OpeningSettings } from '../showcase/OpeningSettings'
+import { frameRendered, registerPlacement, registerPoseReader, resetPresentation, usePresented } from '../showcase/presentation'
 import { ShowcaseOverlay } from '../showcase/ShowcaseOverlay'
 import { features } from '../features'
 import { ShowcaseCamera } from '../showcase/ShowcaseCamera'
 import { SEE_DISTANCE, WALK_SPEEDS } from '../showcase/WalkHud'
 import { introAhead } from '../showcase/useIntro'
-import { currentMood, followSiteLocation, glideTarget } from '../showcase/time'
-import { applyOpeningView, modelBounds, shareDaylightSite } from '../showcase/viewer-actions'
+import { followSiteLocation } from '../showcase/time'
+import { applyOpeningView, modelBounds, type SceneContext, shareDaylightSite } from '../showcase/viewer-actions'
 import { ErrorBoundary } from './ErrorBoundary'
 
 /**
@@ -178,7 +179,6 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision, token }: {
     [settings.value.opening, levelCount, offeredModes])
   // The page opens on the view it was read with; a manager's later changes apply on Reset view.
   const [arrival] = useState(() => opening)
-  const walking = useViewer((s) => s.walkthroughMode)
   const [openingCameraApplied, setOpeningCameraApplied] = useState(false)
   const markOpeningCameraApplied = useCallback(() => setOpeningCameraApplied(true), [])
   const walkingOnFoot = useViewer((s) => s.walkthroughMode && s.walkthroughMovement === 'walk')
@@ -241,6 +241,10 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision, token }: {
       : { nodes: sceneNodes, objectFor: (id) => sceneRegistry.nodes.get(id) },
     [glbUrl, floorplanScene, glbObjects, sceneNodes],
   )
+  // What the Customize panel's mode choice reads (the Cut view and X-ray measure the model).
+  const sceneContextRef = useRef<SceneContext>({ nodes: floorplanScene.nodes, source: viewerSource, families })
+  sceneContextRef.current = { nodes: floorplanScene.nodes, source: viewerSource, bakedObjects: glbUrl ? glbObjects : undefined, families }
+  const sceneContext = useCallback(() => sceneContextRef.current, [])
   // Doors, windows and items with controls: a click on one pins its callout.
   const interactiveIds = useMemo(() => findInteractive(graph), [graph])
   // The orbit's far limit grows with the model, once its bounds are known.
@@ -300,26 +304,9 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision, token }: {
             />
           )}
           {!showSceneLoader && (
-            <SettingsBar settings={settings}>
-              <button className="pascal-settings-button" disabled={walking} type="button"
-                title={walking ? 'Leave the walkthrough to set the opening view' : undefined}
-                onClick={() => {
-                  const pose = cameraPose()
-                  const mode = modeOf(useViewer.getState())
-                  const time = glideTarget() ?? currentMood()
-                  settings.set((current) => ({ ...current, opening: {
-                    ...(pose ? { camera: roundPose(pose) } : {}),
-                    ...(time ? { time } : {}),
-                    ...(mode && mode !== 'walkthrough' ? { mode } : {}),
-                  } }))
-                }}>
-                Set current view as opening view
-              </button>
-              <button aria-label="Reset opening view" className="pascal-settings-button" disabled={!settings.value.opening}
-                onClick={() => settings.set(({ opening: _, ...rest }) => rest)} type="button">
-                Reset
-              </button>
-            </SettingsBar>
+            <SettingsPanel description={`How visitors first see ${projectName?.trim() || 'this project'} in this viewer.`} settings={settings}>
+              <OpeningSettings context={sceneContext} levelCount={levelCount} offeredModes={offeredModes} settings={settings} />
+            </SettingsPanel>
           )}
 
           <ViewerStage

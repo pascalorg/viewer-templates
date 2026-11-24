@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { saveSettings, type ViewerSettings, ViewerSettingsError } from '../pascal'
+import { customizeHinted, customizeRefused, enterCustomize, saveSettings, type ViewerSettings, ViewerSettingsError } from '../pascal'
 import { handoffNavigating } from '../pascal/handoff'
+import { rememberPanelOpen } from './panelState'
 
 export type SettingsStatus = 'idle' | 'saving' | 'saved' | 'conflict' | 'expired' | 'error'
 
@@ -22,8 +23,19 @@ export type ViewerSettingsHandle<T> = {
   value: T
   /** What visitors get now. */
   saved: T
-  /** This visitor opened the viewer from Pascal's Customize and may save. */
+  /** This visitor is in Customize mode (a configure credential): they may change and save. */
   canConfigure: boolean
+  /**
+   * Offer Customize: the visitor is in it, or may enter it (the read's `configureAvailable` or the
+   * entry's `configure=available` hint), and Pascal has not refused it in this tab.
+   */
+  available: boolean
+  /** Enters Customize: leaves for Pascal and comes back in configure mode (or, refused, where it was). */
+  enter(): Promise<void>
+  /** `enter` is on its way to Pascal. */
+  entering: boolean
+  /** `enter` could not start (this page is not a registered viewer, or the address is not one Pascal makes). */
+  enterError: Error | null
   /** A draft differs from what is saved. */
   dirty: boolean
   status: SettingsStatus
@@ -80,6 +92,12 @@ export function useViewerSettings<T>({ settings, token, baseUrl, projectId, pars
   const read = useCallback((data: unknown): T => (data === null || data === undefined ? defaultsRef.current : parseRef.current(data)), [])
 
   const canConfigure = settings?.canConfigure === true
+  // The entry's hint is read once: the address changes on the way in, not while the page is open.
+  const [hinted] = useState(() => customizeHinted(projectId, baseUrl))
+  const available = canConfigure ||
+    ((settings?.configureAvailable === true || hinted) && !customizeRefused(projectId, baseUrl))
+  const [entering, setEntering] = useState(false)
+  const [enterError, setEnterError] = useState<Error | null>(null)
   const viewerId = settings?.viewerId ?? null
   const key = useMemo(() => (viewerId ? draftKey(baseUrl, viewerId, projectId) : null), [baseUrl, viewerId, projectId])
 
@@ -177,5 +195,19 @@ export function useViewerSettings<T>({ settings, token, baseUrl, projectId, pars
     setError(null)
   }, [setDraft])
 
-  return { value, saved, canConfigure, dirty, status, error, set, save, discard, reloadLatest }
+  const enter = useCallback(async () => {
+    if (canConfigure || entering) return
+    setEntering(true)
+    setEnterError(null)
+    // Back in configure mode, the panel opens.
+    rememberPanelOpen(true)
+    try {
+      await enterCustomize(projectId, baseUrl)
+    } catch (failure) {
+      setEntering(false)
+      setEnterError(failure instanceof Error ? failure : new Error(String(failure)))
+    }
+  }, [canConfigure, entering, projectId, baseUrl])
+
+  return { value, saved, canConfigure, available, enter, entering, enterError, dirty, status, error, set, save, discard, reloadLatest }
 }

@@ -457,19 +457,32 @@ main .dark.mt-16.whitespace-nowrap:has(kbd) { display:none; }
   .sc-loader-shimmer { background:none; color:inherit; }
 }
 
-/* ── Viewer settings bar (src/pascal-react/settings-bar.css), managers only ── */
+/* ── Customize panel (src/pascal-react/settings-panel.css), a project's managers only ──
+   Collapsed, a pill on the right edge below sound and full screen; open, a panel beside them, so
+   both stay in reach. Solid glass colours: no blur over the canvas. */
 .sc {
-  --pascal-settings-bg:#1b1e24f0;
+  --pascal-settings-bg:#1b1e24f2;
   --pascal-settings-text:var(--sc-ink);
   --pascal-settings-muted:#b9c0ca;
   --pascal-settings-border:var(--sc-line);
   --pascal-settings-accent:#f2f3f5;
   --pascal-settings-accent-text:#17191c;
-  --pascal-settings-shadow:0 5px 18px #0000002e;
-  --pascal-settings-top:var(--sc-edge-top);
+  --pascal-settings-field:#ffffff0d;
+  --pascal-settings-dot:#ffb224;
+  --pascal-settings-shadow:inset -1px 1px 0 #ffffff1c, 0 0 0 1px #ffffff12, 0 5px 18px #0000002e;
+  --pascal-settings-radius:20px;
+  --pascal-settings-font:var(--font-sans);
+  --pascal-settings-font-size:13px;
+  --pascal-settings-width:360px;
   --pascal-settings-z:45;
+  --pascal-settings-top:var(--sc-edge-top);
+  --pascal-settings-right:calc(var(--sc-edge-right) + 56px);
+  --pascal-settings-bottom:24px;
+  --pascal-settings-tab-top:calc(var(--sc-edge-top) + 109px);
+  --pascal-settings-tab-shift:0px;
 }
-/* Below the sound and full screen buttons where the screen is narrow. */
-@media (max-width:760px) {
-  .sc { --pascal-settings-top:calc(var(--sc-edge-top) + 104px); }
+.sc .pascal-settings-tab-wrap { right:var(--sc-edge-right); }
+/* Phones: the panel is a sheet over the bottom bar. */
+@media (max-width:560px) {
+  .sc { --pascal-settings-bottom:calc(8px + env(safe-area-inset-bottom)); }
 }

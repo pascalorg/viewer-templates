@@ -11,7 +11,7 @@ import {
 import { PASCAL_BASE_URL, PASCAL_TOKEN_URL, projectIdFromLocation } from './config'
 import { hasHandoffCallback } from './pascal/handoff'
 import { canSignIn, signIn, SignInUnavailable, listLevels, type PascalError, type SceneResponse } from './pascal'
-import { SettingsBar, useViewerSettings } from './pascal-react'
+import { SettingsPanel, SettingsRow, SettingsSection, useViewerSettings } from './pascal-react'
 import { DEFAULT_SETTINGS, parseListingSettings, roundPose } from './settings'
 import { type ListingState, useListing } from './useListing'
 import { currentView } from './viewer/openingView'
@@ -183,18 +183,23 @@ function Scene({
       {ready && hasOpenables ? <p className="hint">Click a door or window to open it</p> : null}
 
       {ready ? (
-        <SettingsBar settings={settings}>
-          <button className="pascal-settings-button" type="button" onClick={() => {
-            const view = currentView()
-            if (view) settings.set((current) => ({ ...current, opening: { camera: roundPose(view) } }))
-          }}>
-            Set current view as opening view
-          </button>
-          <button aria-label="Reset opening view" className="pascal-settings-button" disabled={!settings.value.opening}
-            onClick={() => settings.set(({ opening: _, ...rest }) => rest)} type="button">
-            Reset
-          </button>
-        </SettingsBar>
+        <SettingsPanel description={`How visitors first see ${projectName(scene)} in this viewer.`} settings={settings}>
+          <SettingsSection title="Opening view">
+            <SettingsRow label="Camera" value={settings.value.opening?.camera ? 'Custom' : 'Default (frames the house)'}>
+              <button className="pascal-settings-button pascal-settings-primary" type="button" onClick={() => {
+                const view = currentView()
+                if (view) settings.set((current) => ({ ...current, opening: { camera: roundPose(view) } }))
+              }}>
+                Use current view
+              </button>
+              <button aria-label="Clear opening camera" className="pascal-settings-button" disabled={!settings.value.opening}
+                onClick={() => settings.set(({ opening: _, ...rest }) => rest)} type="button">
+                Clear
+              </button>
+            </SettingsRow>
+            <p className="pascal-settings-hint">Visitors open on this view, then move freely.</p>
+          </SettingsSection>
+        </SettingsPanel>
       ) : null}
 
       {hover ? (

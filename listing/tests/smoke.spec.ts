@@ -14,7 +14,12 @@ async function expectBakedReady(page: Page) {
   await expect(page.locator('main[data-state="ready"]')).toBeVisible({ timeout: 20_000 })
 }
 
-/** Distinct colours in the rendered canvas: 1 for an empty clear colour, many for a model. */
+/**
+ * Distinct colours in the rendered canvas: 1 for an empty clear colour, many for a model. The copy
+ * is read on the CPU (`willReadFrequently`): an accelerated 2D canvas reads back through the GPU
+ * process, which the live viewer keeps busy drawing every frame, and on a two-core runner under
+ * SwiftShader that readback can outlast the test.
+ */
 async function canvasColours(page: Page) {
   const png = await page.locator('canvas').screenshot()
   return page.evaluate(async (base64) => {
@@ -24,7 +29,7 @@ async function canvasColours(page: Page) {
     const canvas = document.createElement('canvas')
     canvas.width = image.width
     canvas.height = image.height
-    const context = canvas.getContext('2d')!
+    const context = canvas.getContext('2d', { willReadFrequently: true })!
     context.drawImage(image, 0, 0)
     const { data } = context.getImageData(0, 0, image.width, image.height)
     const colours = new Set<number>()

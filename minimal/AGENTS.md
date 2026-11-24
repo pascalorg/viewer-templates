@@ -14,7 +14,7 @@ The read API contract, what the baked GLB contains, access, deployment and the s
 | Path | Owns |
 | --- | --- |
 | `src/pascal/` | The API client and access helpers, byte-identical to `listing/src/pascal/`. No React, no three.js. |
-| `src/pascal-react/` | `useViewerSettings` and `SettingsBar`, byte-identical to `listing/src/pascal-react/`. |
+| `src/pascal-react/` | `useViewerSettings`, `SettingsPanel` and its field blocks, byte-identical to `listing/src/pascal-react/`. |
 | `src/settings.ts` | This template's viewer settings: the opening view's schema and defaults. |
 | `src/useListing.ts` | Loading flow: choose a ready bake or the live graph; poll while baking. |
 | `src/App.tsx` | Screens, and the scene's state: floor, room, item, panels, tool; the keyboard map; the panels' insets for framing. |
@@ -269,7 +269,8 @@ let `OpeningSchema` in `src/settings.ts` accept it.
 
 ## Viewer settings
 
-The model, how a manager enters Customize mode, the hook and the bar, and how to add a setting are
+The model, how a manager enters Customize mode (from Pascal or from the viewer's own Customize
+tab), the hook, the panel and its field blocks, and how to add a setting are
 in [listing's AGENTS.md](../listing/AGENTS.md#viewer-settings). This template's one setting is the
 opening view, as navigation knows it, not a free camera:
 
@@ -282,10 +283,14 @@ quarter turns from the first one; `zoom` is against the fit (1 frames the buildi
 the controls' limits), so it reads the same on any screen; `target` is the point at the centre of
 the screen (optional: without it the fit's centre). `App` passes the saved view (a manager's draft)
 to `navigation.setOpening` before the drawing first frames; `AxoControls` then opens there instead
-of the first fit and releases the framing, so panels opening don't move it. **Set current view as
-opening view** stores `navigation.currentView()` (the view the controls are easing to); **Reset**
-drops `opening`. An invalid view opens on the first corner, as before. The bar sits top centre,
-below the title on screens under 1,024 px.
+of the first fit and releases the framing, so panels opening don't move it. The Customize panel's
+**Opening view** section (`src/ui/OpeningSettings.tsx`) shows **Projection** (Axonometric, Plan),
+**Turn** (0°, 90°, 180°, 270°) and **Zoom** ("Fits the building" or a factor, with **Fit**), each
+saying "Default (…)" until something is set; choosing one also turns the drawing there. **Use
+current view** stores `navigation.currentView()` (the view the controls are easing to, with its
+centre); **Clear** drops `opening`. An invalid view opens on the first corner, as before. The
+Customize pill sits top right (below the title on screens under 1,024 px), and pill and panel sit
+under the room inspector, which wins.
 
 ## Rules
 

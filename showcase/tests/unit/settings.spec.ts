@@ -95,3 +95,11 @@ test('the scene read keeps working without settings, and a malformed settings do
   expect(SceneResponseSchema.parse({ ...withoutSettings, settings: { ...saved, data: [1] } }).settings).toBeNull()
   expect(SceneResponseSchema.parse({ ...withoutSettings, settings: saved }).settings).toEqual(saved)
 })
+
+test('configureAvailable (protocol v1.1) is read when sent, absent on older servers, and a bad one never fails the read', () => {
+  const { settings: _, ...scene } = sceneBody()
+  const read = (settings: unknown) => SceneResponseSchema.parse({ ...scene, settings }).settings
+  expect(read({ ...saved, canConfigure: false, configureAvailable: true })?.configureAvailable).toBe(true)
+  expect(read({ ...saved, canConfigure: false })?.configureAvailable).toBeUndefined()
+  expect(read({ ...saved, configureAvailable: 'yes' })).toEqual({ ...saved, configureAvailable: undefined })
+})

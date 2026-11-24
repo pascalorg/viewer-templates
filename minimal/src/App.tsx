@@ -13,11 +13,12 @@ import {
 import { PASCAL_BASE_URL, PASCAL_TOKEN_URL, projectIdFromLocation } from './config'
 import { hasHandoffCallback } from './pascal/handoff'
 import { canSignIn, signIn, SignInUnavailable, type PascalError, type SceneResponse } from './pascal'
-import { SettingsBar, useViewerSettings } from './pascal-react'
+import { SettingsPanel, useViewerSettings } from './pascal-react'
 import { DEFAULT_SETTINGS, parseDrawingSettings } from './settings'
 import { readSpaces, roomContents, thingOf } from './spaces'
 import { Dock, type Tool } from './ui/Dock'
 import { Inspector } from './ui/Inspector'
+import { OpeningSettings } from './ui/OpeningSettings'
 import { Help, MeasureMarks, PointerTag, RoomTags, Toast } from './ui/Marks'
 import { Masthead, SpacesPanel } from './ui/SpacesPanel'
 import { type ListingState, useListing } from './useListing'
@@ -361,18 +362,9 @@ function Scene({
           <MeasureMarks />
           <Help onClose={() => setHelpOpen(false)} open={helpOpen} />
           <Toast message={toast} />
-          <SettingsBar settings={settings}>
-            <button className="pascal-settings-button" type="button" onClick={() => {
-              const view = navigation.currentView()
-              if (view) settings.set((current) => ({ ...current, opening: view }))
-            }}>
-              Set current view as opening view
-            </button>
-            <button aria-label="Reset opening view" className="pascal-settings-button" disabled={!settings.value.opening}
-              onClick={() => settings.set(({ opening: _, ...rest }) => rest)} type="button">
-              Reset
-            </button>
-          </SettingsBar>
+          <SettingsPanel description={`How visitors first see ${scene.project.name?.trim() || 'this project'} in this viewer.`} settings={settings}>
+            <OpeningSettings settings={settings} />
+          </SettingsPanel>
         </>
       ) : null}
 

@@ -1,10 +1,10 @@
 import {
-  type AccessMode, type Descriptor, type StoredCredential, ReopenRequired, SignInRefused, SignInUnavailable,
-  detectEntry, exchangeCallback, hasHandoffCallback,
+  type AccessMode, type Descriptor, type StoredCredential, CustomizeRefused, ReopenRequired, SignInRefused, SignInUnavailable,
+  customizeWasRefused, detectEntry, exchangeCallback, hasHandoffCallback,
   readCredential, rejectedAccess, rememberRejection, startAuthorize, storeCredential,
 } from './handoff'
 
-export { ReopenRequired, SignInUnavailable } from './handoff'
+export { CustomizeRefused, ReopenRequired, SignInUnavailable } from './handoff'
 export type Access = { kind: 'anonymous' } | { kind: 'opening' } | { kind: 'refused' } |
   { kind: 'credential'; credential: StoredCredential }
 
@@ -42,6 +42,39 @@ export async function signIn(projectId: string, baseUrl = 'https://editor.pascal
   const descriptor = await resolveDescriptor(issuer)
   if (!descriptor) throw new SignInUnavailable()
   await startAuthorize(issuer, descriptor, projectId, 'session', false, true)
+}
+
+/**
+ * Whether this visitor may be offered Customize from the entry URL alone: Pascal's
+ * `configure=available` hint for this project, unless Pascal refused Customize in this tab. The
+ * scene read's `settings.configureAvailable` is the other signal; either is enough to offer it.
+ */
+export function customizeHinted(projectId: string, baseUrl = 'https://editor.pascal.app'): boolean {
+  if (customizeRefused(projectId, baseUrl)) return false
+  try {
+    const entry = detectEntry()
+    return !!entry && entry.project === projectId && entry.configureAvailable
+  } catch {
+    return false
+  }
+}
+
+/** Pascal refused Customize from inside the viewer in this tab: do not offer it again until the tab closes. */
+export function customizeRefused(projectId: string, baseUrl = 'https://editor.pascal.app'): boolean {
+  return customizeWasRefused(new URL(baseUrl).origin, projectId)
+}
+
+/**
+ * Explicit user action: enter Customize from inside the viewer. Leaves for Pascal's authorize page
+ * (session access, `scope=configure`, sign-in allowed) and comes back in configure mode, the
+ * scene read then saying `canConfigure: true`. If Pascal refuses, the visitor comes back to this
+ * exact page with the access they had, and `customizeRefused` is true for the rest of the tab.
+ */
+export async function enterCustomize(projectId: string, baseUrl = 'https://editor.pascal.app'): Promise<void> {
+  const issuer = new URL(baseUrl).origin
+  const descriptor = await resolveDescriptor(issuer)
+  if (!descriptor) throw new SignInUnavailable()
+  await startAuthorize(issuer, descriptor, projectId, 'session', false, false, true, true)
 }
 
 /**
@@ -89,12 +122,17 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
         callbackResult ??= exchangeCallback(issuer, projectId, descriptor)
         const credential = await callbackResult.catch((error: unknown) => {
           if (error instanceof SignInRefused) return null
+          // Customize from inside the viewer was refused: the address is the visitor's view again,
+          // and the access they had resolves below as if they had never left.
+          if (error instanceof CustomizeRefused) return 'customize-refused' as const
           throw error
         })
         if (!credential) return { kind: 'refused' }
         callbackCompleted = true
-        if (Date.parse(credential.expires_at) - Date.now() <= RENEW_MARGIN) return renew(credential, descriptor)
-        return { kind: 'credential', credential }
+        if (credential !== 'customize-refused') {
+          if (Date.parse(credential.expires_at) - Date.now() <= RENEW_MARGIN) return renew(credential, descriptor)
+          return { kind: 'credential', credential }
+        }
       }
       const entry = detectEntry()
       const mode = entry?.access === 'share' ? 'share' : 'session'

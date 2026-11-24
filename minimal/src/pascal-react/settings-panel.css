@@ -1,0 +1,332 @@
+/*
+ * The Customize panel's look. Theme it from the template's own stylesheet by setting any of these
+ * on an ancestor (the template's root, say):
+ *   colours  --pascal-settings-bg, --pascal-settings-text, --pascal-settings-muted,
+ *            --pascal-settings-border, --pascal-settings-accent, --pascal-settings-accent-text,
+ *            --pascal-settings-field (an unselected option's fill), --pascal-settings-dot,
+ *            --pascal-settings-shadow
+ *   shape    --pascal-settings-radius (the panel), --pascal-settings-font, --pascal-settings-font-size,
+ *            --pascal-settings-width
+ *   place    --pascal-settings-z, --pascal-settings-top, --pascal-settings-right,
+ *            --pascal-settings-bottom (the open panel's margins: it is as tall as its fields, up
+ *            to the bottom margin), --pascal-settings-tab-top (the collapsed
+ *            tab's top edge; centred on it by --pascal-settings-tab-shift, default -50%)
+ * No backdrop blur: a blurred layer over a WebGPU canvas flickers on some displays. Rules inside
+ * the panel are scoped to it, so a template's own element rules (`.app button`) never win.
+ */
+.pascal-settings-tab-wrap,
+.pascal-settings-panel {
+  position: fixed;
+  z-index: var(--pascal-settings-z, 50);
+  box-sizing: border-box;
+  color: var(--pascal-settings-text, #16181d);
+  font-family: var(--pascal-settings-font, inherit);
+  font-size: var(--pascal-settings-font-size, 13px);
+  line-height: 1.35;
+  pointer-events: auto;
+}
+
+.pascal-settings-tab-wrap *,
+.pascal-settings-panel *,
+.pascal-settings-panel *::before,
+.pascal-settings-panel *::after {
+  box-sizing: border-box;
+}
+
+/* ── Collapsed: a tab on the right edge ── */
+.pascal-settings-tab-wrap {
+  top: var(--pascal-settings-tab-top, 50%);
+  right: var(--pascal-settings-right, 12px);
+  transform: translateY(var(--pascal-settings-tab-shift, -50%));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-tab {
+  appearance: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 14px 8px 12px;
+  border: 1px solid var(--pascal-settings-border, rgba(22, 24, 29, 0.12));
+  border-radius: 9999px;
+  background: var(--pascal-settings-bg, #ffffff);
+  box-shadow: var(--pascal-settings-shadow, 0 6px 20px rgba(22, 24, 29, 0.14));
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-tab:hover:not(:disabled) {
+  border-color: var(--pascal-settings-accent, #16181d);
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-tab:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-tab-note {
+  margin: 0;
+  max-width: 220px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--pascal-settings-bg, #ffffff);
+  box-shadow: var(--pascal-settings-shadow, 0 6px 20px rgba(22, 24, 29, 0.14));
+  color: var(--pascal-settings-muted, #5d6370);
+}
+
+/* The draft that collapsing kept. */
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--pascal-settings-dot, #e5484d);
+  flex: none;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-icon {
+  flex: none;
+}
+
+/* ── Expanded: the panel ── */
+.pascal-settings-panel {
+  top: var(--pascal-settings-top, 12px);
+  right: var(--pascal-settings-right, 12px);
+  /* As tall as its fields, never past the bottom margin. */
+  max-height: calc(100vh - var(--pascal-settings-top, 12px) - var(--pascal-settings-bottom, 12px));
+  max-height: calc(100dvh - var(--pascal-settings-top, 12px) - var(--pascal-settings-bottom, 12px));
+  width: var(--pascal-settings-width, 320px);
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pascal-settings-border, rgba(22, 24, 29, 0.12));
+  border-radius: var(--pascal-settings-radius, 18px);
+  background: var(--pascal-settings-bg, #ffffff);
+  box-shadow: var(--pascal-settings-shadow, 0 6px 20px rgba(22, 24, 29, 0.14));
+  overflow: hidden;
+  outline: none;
+  animation: pascal-settings-in 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes pascal-settings-in {
+  from { opacity: 0; transform: translateX(16px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pascal-settings-panel { animation: none; }
+}
+
+/* Phones: a sheet across the bottom. */
+@media (max-width: 560px) {
+  .pascal-settings-panel {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: var(--pascal-settings-bottom, 8px);
+    width: auto;
+    max-width: none;
+    max-height: min(72vh, 560px);
+  }
+
+  @keyframes pascal-settings-in {
+    from { opacity: 0; transform: translateY(16px); }
+  }
+
+  /* The sheet collapses downwards. */
+  .pascal-settings-panel .pascal-settings-icon-button .pascal-settings-icon {
+    transform: rotate(90deg);
+  }
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 12px 12px 16px;
+  border-bottom: 1px solid var(--pascal-settings-border, rgba(22, 24, 29, 0.12));
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-title {
+  margin: 0;
+  font-size: 1.15em;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-description {
+  margin: 3px 0 0;
+  color: var(--pascal-settings-muted, #5d6370);
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 16px 14px;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-section + .pascal-settings-section {
+  border-top: 1px solid var(--pascal-settings-border, rgba(22, 24, 29, 0.12));
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-section-title {
+  margin: 12px 0 6px;
+  color: var(--pascal-settings-muted, #5d6370);
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 0;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-row + .pascal-settings-row {
+  border-top: 1px dashed var(--pascal-settings-border, rgba(22, 24, 29, 0.12));
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-label {
+  font-weight: 600;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-value {
+  color: var(--pascal-settings-muted, #5d6370);
+  text-align: right;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-row-controls,
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-options,
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-hint {
+  margin: 4px 0 2px;
+  color: var(--pascal-settings-muted, #5d6370);
+  font-size: 0.92em;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--pascal-settings-border, rgba(22, 24, 29, 0.12));
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-message {
+  margin: 0;
+  color: var(--pascal-settings-muted, #5d6370);
+}
+
+.pascal-settings-panel[data-dirty="true"] .pascal-settings-message,
+.pascal-settings-panel[data-status="conflict"] .pascal-settings-message,
+.pascal-settings-panel[data-status="expired"] .pascal-settings-message,
+.pascal-settings-panel[data-status="error"] .pascal-settings-message {
+  color: var(--pascal-settings-text, #16181d);
+  font-weight: 600;
+}
+
+.pascal-settings-panel[data-dirty="true"] .pascal-settings-message::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 9999px;
+  background: var(--pascal-settings-dot, #e5484d);
+  vertical-align: 0.08em;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-actions {
+  justify-content: flex-end;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-button,
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-option,
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-icon-button {
+  appearance: none;
+  border: 1px solid var(--pascal-settings-border, rgba(22, 24, 29, 0.12));
+  border-radius: 9999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-button {
+  min-height: 32px;
+  padding: 7px 14px;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-option {
+  min-height: 30px;
+  padding: 6px 12px;
+  background: var(--pascal-settings-field, transparent);
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-icon-button {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-button:hover:not(:disabled),
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-option:hover:not(:disabled),
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-icon-button:hover {
+  border-color: var(--pascal-settings-accent, #16181d);
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-tab:focus-visible,
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-button:focus-visible,
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-option:focus-visible,
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-icon-button:focus-visible {
+  outline: 2px solid var(--pascal-settings-accent, #16181d);
+  outline-offset: 2px;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-button:disabled,
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-option:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-primary,
+:is(.pascal-settings-panel, .pascal-settings-tab-wrap) .pascal-settings-option[aria-checked="true"] {
+  border-color: var(--pascal-settings-accent, #16181d);
+  background: var(--pascal-settings-accent, #16181d);
+  color: var(--pascal-settings-accent-text, #ffffff);
+}

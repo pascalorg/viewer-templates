@@ -1,7 +1,17 @@
 /** Browser-only protocol plumbing, with no framework or renderer dependencies. */
 export type AccessMode = 'session' | 'share'
-/** `configure`: a manager opened the viewer to customise it (Pascal's Share popover, Customize). */
-export type Entry = { project: string; viewer: string; access: AccessMode | 'anonymous'; configure: boolean }
+/**
+ * `configure`: a manager opened the viewer to customise it (Pascal's Share popover, Customize).
+ * `configureAvailable`: Pascal's hint that this visitor manages the project and may enter Customize
+ * from inside the viewer (`configure=available`). It grants nothing; authorize decides.
+ */
+export type Entry = {
+  project: string
+  viewer: string
+  access: AccessMode | 'anonymous'
+  configure: boolean
+  configureAvailable: boolean
+}
 export type Descriptor = { viewer_id: string; redirect_uri: string }
 export type Transaction = {
   verifier: string
@@ -17,6 +27,12 @@ export type Transaction = {
   signIn?: boolean
   /** Asked for `scope=configure`; session access only. */
   configure?: boolean
+  /**
+   * Customize started from inside the viewer (`enterCustomize`): a refusal returns to
+   * `fallbackPath`, the view the visitor had, instead of the refusal screen.
+   */
+  customize?: boolean
+  fallbackPath?: string
 }
 export type Credential = {
   access_token: string
@@ -47,6 +63,14 @@ export class SignInRefused extends Error {
   }
 }
 
+/** Pascal refused Customize started from inside the viewer: the visitor is back on the view they had. */
+export class CustomizeRefused extends Error {
+  constructor() {
+    super("Customize isn't available for this account")
+    this.name = 'CustomizeRefused'
+  }
+}
+
 export class SignInUnavailable extends Error {
   constructor() {
     super('This site is not a registered Pascal viewer.')
@@ -59,6 +83,23 @@ export const credentialKey = (issuer: string, viewer: string, project: string) =
   `pascal:credential:${JSON.stringify([issuer, viewer, project, location.origin])}`
 const reopenKey = (issuer: string, viewer: string, project: string) =>
   `pascal:reopen:${JSON.stringify([issuer, viewer, project, location.origin])}`
+/** One viewer per origin, so issuer and project name it. */
+const customizeRefusedKey = (issuer: string, project: string) =>
+  `pascal:customize-refused:${JSON.stringify([issuer, project, location.origin])}`
+
+/** Pascal refused Customize from inside the viewer in this tab: the entry stays hidden until the tab closes. */
+export function customizeWasRefused(issuer: string, project: string): boolean {
+  try { return sessionStorage.getItem(customizeRefusedKey(issuer, project)) === '1' } catch { return false }
+}
+
+function rememberCustomize(issuer: string, project: string, refused: boolean) {
+  try {
+    if (refused) sessionStorage.setItem(customizeRefusedKey(issuer, project), '1')
+    else sessionStorage.removeItem(customizeRefusedKey(issuer, project))
+  } catch {
+    // Storage denied: the entry shows again on the next page load.
+  }
+}
 
 function readStored(key: string): unknown {
   try {
@@ -78,6 +119,8 @@ export function readTransaction(issuer: string): Transaction | null {
     typeof value.createdAt !== 'number' || typeof value.returnPath !== 'string' ||
     typeof value.redirect_uri !== 'string' ||
     (value.configure !== undefined && (typeof value.configure !== 'boolean' || (value.configure && value.access !== 'session'))) ||
+    (value.customize !== undefined && (value.customize !== true || value.configure !== true || typeof value.fallbackPath !== 'string')) ||
+    (value.customize === undefined && value.fallbackPath !== undefined) ||
     !/^[A-Za-z0-9_-]{43}$/.test(value.state || '') ||
     !/^[A-Za-z0-9_-]{43}$/.test(value.verifier || '')
   ) throw new ReopenRequired()
@@ -125,12 +168,23 @@ export function detectEntry(): Entry | null {
     !['project', 'viewer', 'access'].every((key) => query.getAll(key).length === 1 && query.get(key)) ||
     !['session', 'share', 'anonymous'].includes(access || '')
   ) throw new ReopenRequired(access === 'share' ? 'share' : 'session')
-  // `configure=1` comes only with session access; anything else is not a link Pascal makes.
-  const configure = query.has('configure')
-  if (configure && (query.getAll('configure').length !== 1 || query.get('configure') !== '1' || access !== 'session')) {
-    throw new ReopenRequired(access === 'share' ? 'share' : 'session')
+  // `configure=1` (enter Customize now) comes only with session access; `configure=available` (the
+  // visitor may enter it) with any. Anything else is not a link Pascal makes.
+  const configure = query.get('configure')
+  if (
+    query.getAll('configure').length > 1 ||
+    (configure !== null && configure !== '1' && configure !== 'available') ||
+    (configure === '1' && access !== 'session')
+  ) throw new ReopenRequired(access === 'share' ? 'share' : 'session')
+  return {
+    project: query.get('project')!, viewer: query.get('viewer')!, access: access as Entry['access'],
+    configure: configure === '1', configureAvailable: configure === 'available',
   }
-  return { project: query.get('project')!, viewer: query.get('viewer')!, access: access as Entry['access'], configure }
+}
+
+/** A return or fallback path's `configure`: absent, or Pascal's hint. Never `configure=1`. */
+function hintOnly(query: URLSearchParams): boolean {
+  return query.getAll('configure').length <= 1 && [null, 'available'].includes(query.get('configure'))
 }
 
 /** Only local paths survive the round trip; protocol-relative paths and callback material do not. */
@@ -153,28 +207,39 @@ export function handoffNavigating(): boolean {
   return navigating
 }
 
+/**
+ * `customize`: Customize started from inside the viewer (implies `configure`). The page it starts
+ * from is the fallback a refusal returns to; it must not itself be asking for configure mode.
+ */
 export async function startAuthorize(
   issuer: string, descriptor: Descriptor, project: string, access: AccessMode, renewal = false, signIn = false,
-  configure = false,
+  configure = false, customize = false,
 ): Promise<void> {
   if (configure && (access !== 'session' || signIn)) throw new ReopenRequired(access)
+  if (customize && (!configure || renewal)) throw new ReopenRequired(access)
   const state = base64url(crypto.getRandomValues(new Uint8Array(32)))
   const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)))
   const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))))
+  const here = localReturnPath(location.pathname + location.search + location.hash)
+  if (customize && !hintOnly(new URL(here, location.origin).searchParams)) throw new ReopenRequired(access)
   const returnUrl = new URL(location.href)
   if (!signIn) {
     returnUrl.searchParams.set('project', project)
     returnUrl.searchParams.set('viewer', descriptor.viewer_id)
     returnUrl.searchParams.set('access', access)
   }
-  // Configure mode survives the round trip in the return path; nothing else asks for it.
+  // Configure mode survives the round trip in the return path, and so does Pascal's hint that the
+  // visitor may enter it; nothing else asks for either.
+  const hinted = returnUrl.searchParams.getAll('configure').length === 1 && returnUrl.searchParams.get('configure') === 'available'
   if (configure) returnUrl.searchParams.set('configure', '1')
+  else if (hinted) returnUrl.searchParams.set('configure', 'available')
   else returnUrl.searchParams.delete('configure')
   const transaction: Transaction = {
     verifier, state, issuer, viewer: descriptor.viewer_id, project,
     redirect_uri: descriptor.redirect_uri, access, createdAt: Date.now(),
     returnPath: localReturnPath(returnUrl.pathname + returnUrl.search + returnUrl.hash), renewal, signIn,
     ...(configure ? { configure } : {}),
+    ...(customize ? { customize, fallbackPath: here } : {}),
   }
   sessionStorage.setItem(transactionKey(issuer), JSON.stringify(transaction))
   const url = new URL('/viewer/authorize', issuer)
@@ -240,6 +305,8 @@ export async function exchangeCallback(
     const entry = detectEntry()
     const returnPath = localReturnPath(transaction.returnPath)
     const returnQuery = new URL(returnPath, location.origin).searchParams
+    const fallbackPath = transaction.customize ? localReturnPath(transaction.fallbackPath!) : null
+    const fallbackQuery = fallbackPath ? new URL(fallbackPath, location.origin).searchParams : null
     if (
       !callback.valid ||
       (callback.code !== null && !/^pvc_[A-Za-z0-9_-]{43}$/.test(callback.code)) ||
@@ -253,12 +320,27 @@ export async function exchangeCallback(
         ? (returnQuery.has('project') && (returnQuery.getAll('project').length !== 1 || returnQuery.get('project') !== project)) ||
           ((returnQuery.has('viewer') || returnQuery.has('access')) &&
             (returnQuery.getAll('viewer').length !== 1 || returnQuery.get('viewer') !== transaction.viewer ||
-              returnQuery.getAll('access').length !== 1 || ![access, 'anonymous'].includes(returnQuery.get('access') || '')))
+              returnQuery.getAll('access').length !== 1 || ![access, 'anonymous'].includes(returnQuery.get('access') || ''))) ||
+          !hintOnly(returnQuery)
         : returnQuery.get('project') !== project || returnQuery.get('viewer') !== transaction.viewer ||
           returnQuery.get('access') !== access ||
-          returnQuery.getAll('configure').length > 1 || returnQuery.get('configure') !== (transaction.configure === true ? '1' : null))
+          (transaction.configure === true
+            ? returnQuery.getAll('configure').length !== 1 || returnQuery.get('configure') !== '1'
+            : !hintOnly(returnQuery))) ||
+      // The view Customize started from: this project, this viewer, and not itself configure mode.
+      (fallbackQuery !== null &&
+        (!hintOnly(fallbackQuery) ||
+          fallbackQuery.getAll('project').length > 1 || ![null, project].includes(fallbackQuery.get('project')) ||
+          fallbackQuery.getAll('viewer').length > 1 || ![null, transaction.viewer].includes(fallbackQuery.get('viewer'))))
     ) throw new ReopenRequired(access)
     if (callback.error !== null) {
+      if (fallbackPath !== null) {
+        // Customize from inside the viewer was refused (a forged hint, a demoted manager): back to
+        // the view the visitor had, with the entry hidden for the rest of the tab.
+        history.replaceState(history.state, '', fallbackPath)
+        rememberCustomize(issuer, project, true)
+        throw new CustomizeRefused()
+      }
       history.replaceState(history.state, '', returnPath)
       throw new SignInRefused()
     }
@@ -272,10 +354,16 @@ export async function exchangeCallback(
       body.project_id !== project || body.viewer_id !== transaction.viewer ||
       body.token_type !== 'Bearer' || body.revision !== 'published' ||
       typeof body.expires_at !== 'string' || !Number.isFinite(Date.parse(body.expires_at)) ||
-      Date.parse(body.expires_at) <= Date.now() ||
-      // Asked for configure and not granted it: reopen, never silently continue as a reader.
-      (transaction.configure === true && body.scope !== 'configure')
+      Date.parse(body.expires_at) <= Date.now()
     ) throw new ReopenRequired(access)
+    // Asked for configure and not granted it: never silently continue as a reader. From inside the
+    // viewer that is a refusal (the credential is dropped); a Customize link from Pascal reopens.
+    if (transaction.configure === true && body.scope !== 'configure') {
+      if (fallbackPath === null) throw new ReopenRequired(access)
+      history.replaceState(history.state, '', fallbackPath)
+      rememberCustomize(issuer, project, true)
+      throw new CustomizeRefused()
+    }
     const credential: StoredCredential = {
       access_token: body.access_token, expires_at: body.expires_at!,
       project_id: project, viewer_id: transaction.viewer, issuer, origin: location.origin, access,
@@ -283,10 +371,11 @@ export async function exchangeCallback(
       ...(transaction.configure === true ? { configure: true } : {}),
     }
     storeCredential(credential)
+    if (transaction.configure === true) rememberCustomize(issuer, project, false)
     history.replaceState(history.state, '', returnPath)
     return credential
   } catch (error) {
-    if (error instanceof SignInRefused) throw error
+    if (error instanceof SignInRefused || error instanceof CustomizeRefused) throw error
     throw new ReopenRequired(access)
   }
 }

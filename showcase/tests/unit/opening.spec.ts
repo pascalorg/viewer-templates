@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { defaultView, type ModeId } from '../../src/showcase/modes'
-import { cameraAzimuth, parseShowcaseSettings, resolveOpening, roundPose } from '../../src/showcase/opening'
+import { cameraAzimuth, parseShowcaseSettings, resolveOpening, roundPose, withOpening } from '../../src/showcase/opening'
 
 const camera = { position: [8, 4, 6] as [number, number, number], target: [0, 1, 0] as [number, number, number] }
 const offered: ModeId[] = ['exterior', 'exploded', 'cut', 'xray', 'walkthrough']
@@ -35,4 +35,21 @@ test('the opening view resolves over the default view, and a mode the page does 
 test('a camera heading is measured as the framing measures it, and poses round to millimetres', () => {
   expect(cameraAzimuth(camera)).toBeCloseTo(Math.atan2(8, 6))
   expect(roundPose({ position: [1.23456, 2, 3], target: [0.0004, 0, -0.0006] })).toEqual({ position: [1.235, 2, 3], target: [0, 0, -0.001] })
+})
+
+test('the panel changes the opening view field by field, and an empty one is nothing saved', () => {
+  const start = parseShowcaseSettings({ v: 1, keep: 'me', opening: { camera, time: 'night', mode: 'cut' } })
+  expect(withOpening(start, { time: 'day' })).toEqual({ v: 1, keep: 'me', opening: { camera, time: 'day', mode: 'cut' } })
+  expect(withOpening(start, { time: undefined })).toEqual({ v: 1, keep: 'me', opening: { camera, mode: 'cut' } })
+  expect(withOpening(withOpening(withOpening(start, { camera: undefined }), { time: undefined }), { mode: undefined }))
+    .toEqual({ v: 1, keep: 'me' })
+  expect(withOpening({ v: 1 }, { time: 'dawn' })).toEqual({ v: 1, opening: { time: 'dawn' } })
+})
+
+test('data saved by the first settings build still reads the same', () => {
+  // As 50b30f2 saved it: the bar's "Set current view as opening view".
+  const saved = { v: 1, opening: { mode: 'exploded', time: 'dusk', camera: { target: [-0.885, 2.906, -1.635], position: [-12.378, 8.424, 23.84] } } }
+  expect(parseShowcaseSettings(saved)).toEqual(saved)
+  expect(resolveOpening(parseShowcaseSettings(saved).opening, 2, offered))
+    .toEqual({ mode: 'exploded', mood: 'dusk', camera: saved.opening.camera })
 })

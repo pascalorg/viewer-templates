@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test'
 import type { ViewerSettings } from '../src/pascal'
-import { cors, ISSUER, liveScene, mockPascal, PROJECT, TOKEN, VIEWER } from './pascal-mocks'
+import { cors, ISSUER, liveScene, mockPascal, PROJECT, sceneBody, TOKEN, VIEWER } from './pascal-mocks'
 
 // The full viewer is slow under software rendering. The shared client's handoff (scope=configure,
 // renewal, refusals) is tested in listing; these cover what the showcase saves and opens on.
@@ -11,19 +11,21 @@ const CHROME = '.sc-chrome'
 const configureEntry = `/?project=${PROJECT}&viewer=${VIEWER}&access=session&configure=1`
 const CAMERA = { position: [7, 3, 9], target: [0, 1, 0] }
 
-const settings = (data: ViewerSettings['data'], { revision = 3, canConfigure = false } = {}): ViewerSettings =>
-  ({ viewerId: VIEWER, revision, data, canConfigure })
+const settings = (data: ViewerSettings['data'], options: { revision?: number; canConfigure?: boolean; configureAvailable?: boolean } = {}): ViewerSettings => {
+  const { revision = 3, canConfigure = false, configureAvailable = canConfigure } = options
+  return { viewerId: VIEWER, revision, data, canConfigure, configureAvailable }
+}
 const withSettings = (value: ViewerSettings) => ({ ...liveScene(), settings: value })
 
-async function seedConfigureCredential(page: Page) {
-  await page.addInitScript(({ issuer, project, viewer, token }) => {
+async function seedConfigureCredential(page: Page, { configure = true } = {}) {
+  await page.addInitScript(({ issuer, project, viewer, token, configure }) => {
     if (sessionStorage.getItem('fixture:seeded')) return
     sessionStorage.setItem('fixture:seeded', '1')
     sessionStorage.setItem(`pascal:credential:${JSON.stringify([issuer, viewer, project, location.origin])}`,
       JSON.stringify({ issuer, project_id: project, viewer_id: viewer, origin: location.origin, access: 'session',
-        configure: true, access_token: token, renewalAttempted: false,
+        ...(configure ? { configure: true } : {}), access_token: token, renewalAttempted: false,
         expires_at: new Date(Date.now() + 3_600_000).toISOString() }))
-  }, { issuer: ISSUER, project: PROJECT, viewer: VIEWER, token: TOKEN })
+  }, { issuer: ISSUER, project: PROJECT, viewer: VIEWER, token: TOKEN, configure })
   await page.route('**/api/viewers/resolve?*', (route) => route.fulfill({ headers: cors, json: {
     viewer_id: VIEWER, redirect_uri: new URL(route.request().url()).searchParams.get('origin') + '/', availability: 'available',
   } }))
@@ -66,7 +68,8 @@ test('a visitor settles into the saved opening view: camera, time of day and mod
   await expect(chrome).toHaveAttribute('data-time-of-day', 'night')
   await expect(chrome).toHaveAttribute('data-mode', 'exploded')
   await expectCameraAt(camera, CAMERA.position)
-  await expect(page.getByRole('region', { name: 'Customize this viewer' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Customize' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Customize/ })).toHaveCount(0)
   // Reset view returns to the opening view, not the template's.
   await page.getByRole('button', { name: 'Day', exact: true }).locator('svg').click({ force: true })
   await expect(chrome).toHaveAttribute('data-time-of-day', 'midday')
@@ -94,33 +97,80 @@ test('invalid saved values fall back field by field: walkthrough is never the op
   await expect(chrome).toHaveAttribute('data-mode', 'exterior')
 })
 
-test('a manager sets the view on screen as the opening view and saves it with the read revision', async ({ page }) => {
-  await mockPascal(page, () => ({ body: withSettings(settings({ v: 1, other: true }, { canConfigure: true })) }))
-  await seedConfigureCredential(page)
+/** Answers PUT /viewer-settings with the next revision and records the bodies. */
+async function settingsWrites(page: Page) {
   const writes: { revision: number; data: { other?: boolean; opening?: { camera?: { position: number[] }; time?: string; mode?: string } } }[] = []
   await page.route('**/api/projects/*/viewer-settings', (route) => {
     const headers = { ...cors, 'access-control-allow-methods': 'PUT, OPTIONS' }
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
     const body = route.request().postDataJSON()
     writes.push(body)
-    return route.fulfill({ headers, json: { settings: settings(body.data, { revision: 4, canConfigure: true }) } })
+    return route.fulfill({ headers, json: { settings: settings(body.data, { revision: body.revision + 1, canConfigure: true }) } })
   })
+  return writes
+}
+
+test('a manager picks the time of day and mode in the panel: the screen follows and Save keeps exactly that', async ({ page }) => {
+  await mockPascal(page, () => ({ body: withSettings(settings({ v: 1, other: true }, { canConfigure: true })) }))
+  await seedConfigureCredential(page)
+  const writes = await settingsWrites(page)
   await page.goto(configureEntry)
   await expect(page.locator(READY)).toBeVisible({ timeout: 60_000 })
-  const bar = page.getByRole('region', { name: 'Customize this viewer' })
-  await expect(bar).toBeVisible()
-  await page.getByRole('button', { name: 'Night', exact: true }).locator('svg').click({ force: true })
-  await expect(page.locator(CHROME)).toHaveAttribute('data-time-of-day', 'night')
-  await page.getByRole('button', { name: 'Exploded', exact: true }).locator('svg').click({ force: true })
-  await bar.getByRole('button', { name: 'Set current view as opening view' }).click()
-  await expect(bar.getByRole('status')).toHaveText('Unsaved changes')
-  await bar.getByRole('button', { name: 'Save' }).click()
-  await expect(bar.getByRole('status')).toHaveText('Saved')
-  expect(writes).toHaveLength(1)
-  expect(writes[0]!.revision).toBe(3)
-  expect(writes[0]!.data.other).toBe(true)
-  expect(writes[0]!.data.opening).toMatchObject({ time: 'night', mode: 'exploded' })
-  expect(writes[0]!.data.opening!.camera!.position).toHaveLength(3)
+  const panel = page.getByRole('region', { name: 'Customize' })
+  const chrome = page.locator(CHROME)
+  await expect(panel).toBeVisible()
+  const time = panel.getByRole('radiogroup', { name: 'Time of day' })
+  const mode = panel.getByRole('radiogroup', { name: 'Mode' })
+  await expect(time.getByRole('radio', { name: 'Default' })).toHaveAttribute('aria-checked', 'true')
+  await expect(panel.getByRole('group', { name: 'Time of day' })).toContainText('Default (Dusk)')
+  await expect(panel.getByRole('group', { name: 'Camera' })).toContainText('Default (frames the house)')
+  await time.getByRole('radio', { name: 'Night' }).click()
+  await expect(chrome).toHaveAttribute('data-time-of-day', 'night')
+  await mode.getByRole('radio', { name: 'Cut view' }).click()
+  await expect(chrome).toHaveAttribute('data-mode', 'cut')
+  await expect(panel.getByRole('status')).toHaveText('Unsaved changes')
+  await panel.getByRole('button', { name: 'Save' }).click()
+  await expect(panel.getByRole('status')).toHaveText('Saved')
+  expect(writes[0]).toEqual({ revision: 3, data: { v: 1, other: true, opening: { time: 'night', mode: 'cut' } } })
+  // The dial changes the screen, not what is saved, and the panel says so.
+  await page.getByRole('button', { name: 'Day', exact: true }).locator('svg').click({ force: true })
+  await expect(chrome).toHaveAttribute('data-time-of-day', 'midday')
+  await expect(panel.locator('[data-differs]')).toContainText('On screen now: Day')
+  await expect(panel.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await expect(time.getByRole('radio', { name: 'Night' })).toHaveAttribute('aria-checked', 'true')
+  // "Use current view" takes the screen as it is: the camera, Day and the Cut view.
+  await panel.getByRole('button', { name: 'Use current view' }).click()
+  await expect(time.getByRole('radio', { name: 'Day' })).toHaveAttribute('aria-checked', 'true')
+  await expect(panel.getByRole('group', { name: 'Camera' })).toContainText('Custom')
+  await expect(panel.locator('[data-differs]')).toHaveCount(0)
+  await panel.getByRole('button', { name: 'Save' }).click()
+  await expect(panel.getByRole('status')).toHaveText('Saved')
+  expect(writes[1]!.revision).toBe(4)
+  expect(writes[1]!.data.opening).toMatchObject({ time: 'day', mode: 'cut' })
+  expect(writes[1]!.data.opening!.camera!.position).toHaveLength(3)
+  // Back to the defaults, field by field: nothing saved under opening.
+  await time.getByRole('radio', { name: 'Default' }).click()
+  await mode.getByRole('radio', { name: 'Default' }).click()
+  await panel.getByRole('button', { name: 'Clear camera' }).click()
+  await panel.getByRole('button', { name: 'Save' }).click()
+  await expect(panel.getByRole('status')).toHaveText('Saved')
+  expect(writes[2]).toEqual({ revision: 5, data: { v: 1, other: true } })
+})
+
+test('a manager arriving from Open in Pascal sees a collapsed Customize entry', async ({ page }) => {
+  await mockPascal(page, () => ({ body: withSettings(settings(null, { revision: 0, configureAvailable: true })) }))
+  await seedConfigureCredential(page, { configure: false })
+  await page.goto(`/?project=${PROJECT}&viewer=${VIEWER}&access=session&configure=available`)
+  await expect(page.locator(READY)).toBeVisible({ timeout: 60_000 })
+  const entry = page.getByRole('button', { name: 'Customize', exact: true })
+  await expect(entry).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Customize' })).toHaveCount(0)
+  // Clear of sound and full screen.
+  const tab = (await entry.boundingBox())!
+  for (const utility of await page.locator('.sc-utility').all()) {
+    const box = (await utility.boundingBox())!
+    expect(box.y + box.height <= tab.y || tab.y + tab.height <= box.y || box.x + box.width <= tab.x || tab.x + tab.width <= box.x).toBe(true)
+  }
 })
 
 test.describe('with motion', () => {
@@ -137,5 +187,15 @@ test.describe('with motion', () => {
     await expect(chrome).toHaveAttribute('data-time-of-day', 'midday')
     await expect(chrome).toHaveAttribute('data-mode', 'exterior')
     await expectCameraAt(camera, CAMERA.position)
+  })
+
+  test('over a bake, the intro ends at the saved time of day (a sun height, placed at the site)', async ({ page }) => {
+    await mockPascal(page, () => ({ body: { ...sceneBody(), settings: settings({ v: 1, opening: { time: 'dawn', mode: 'exterior' } }) } }))
+    await page.goto(`/?project=${PROJECT}`)
+    await expect(page.locator(`${READY}[data-source="baked"]`)).toBeVisible({ timeout: 60_000 })
+    const chrome = page.locator(CHROME)
+    await expect(chrome).toHaveAttribute('data-intro', 'false', { timeout: 30_000 })
+    await expect(chrome).toHaveAttribute('data-sky', 'dawn')
+    await expect(chrome).toHaveAttribute('data-mode', 'exterior')
   })
 })

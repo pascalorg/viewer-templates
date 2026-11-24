@@ -294,20 +294,27 @@ code {
   color: #b42318;
 }
 
-/* The viewer settings bar (src/pascal-react/settings-bar.css), in this template's tokens. Managers
-   only; top centre, below the header on narrow screens. */
+/* The Customize panel (src/pascal-react/settings-panel.css), in this template's tokens. Only for
+   a project's managers. Collapsed, a pill top right, clear of the floor buttons bottom right; on
+   narrow screens below the project header. */
 .app {
-  --pascal-settings-bg: var(--surface);
+  --pascal-settings-bg: #ffffff;
   --pascal-settings-text: var(--text);
   --pascal-settings-muted: var(--muted);
   --pascal-settings-border: var(--border);
   --pascal-settings-accent: var(--accent);
   --pascal-settings-accent-text: var(--accent-text);
+  --pascal-settings-shadow: 0 6px 20px rgba(22, 24, 29, 0.1);
+  --pascal-settings-radius: 14px;
   --pascal-settings-top: 16px;
+  --pascal-settings-right: 16px;
+  --pascal-settings-bottom: 16px;
+  --pascal-settings-tab-top: 16px;
+  --pascal-settings-tab-shift: 0px;
 }
 
 @media (max-width: 720px) {
   .app {
-    --pascal-settings-top: 96px;
+    --pascal-settings-tab-top: 84px;
   }
 }

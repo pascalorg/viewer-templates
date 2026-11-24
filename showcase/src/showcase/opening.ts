@@ -43,6 +43,17 @@ export function parseShowcaseSettings(data: unknown): ShowcaseSettings {
 
 export type CameraPose = { position: Vec3; target: Vec3 }
 
+/**
+ * Changes the saved opening view field by field: a field set to undefined goes back to the
+ * template's default, and an opening view with no field left is removed (nothing saved).
+ */
+export function withOpening(settings: ShowcaseSettings, patch: Partial<SavedOpening>): ShowcaseSettings {
+  const opening = Object.fromEntries(Object.entries({ ...settings.opening, ...patch })
+    .filter(([, value]) => value !== undefined)) as SavedOpening
+  const { opening: _, ...rest } = settings
+  return Object.keys(opening).length ? { ...rest, opening } : rest
+}
+
 /** The view a page settles into: always a mode and a mood; a camera, or null to frame the house. */
 export type OpeningView = { mode: ModeId; mood: MoodId; camera: CameraPose | null }
 

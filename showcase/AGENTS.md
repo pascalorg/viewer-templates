@@ -34,7 +34,7 @@ the loading flow and the runtime, which this template shares.
 | `src/viewer/ProjectViewer.tsx` | The assembly, as in `pascal`, with `ShowcaseOverlay` in place of the header and controls bar. |
 | `src/viewer/screens.tsx` | Loading, access, Sign in with Pascal and error screens in the loader's look. |
 | `src/main.tsx`, `config.ts`, `App.tsx`, `useProjectScene.ts`, `src/runtime/`, `src/pascal/` | As in `pascal`. |
-| `src/pascal-react/` | `useViewerSettings` and `SettingsBar`, byte-identical to `listing/src/pascal-react/`. |
+| `src/pascal-react/` | `useViewerSettings`, `SettingsPanel` and its field blocks, byte-identical to `listing/src/pascal-react/`. |
 | `public/` | Sounds (`audios/sfx/`) and DM Sans with its licence (`fonts/`). |
 | `tests/` | Playwright tests against a mocked API; `tests/unit/` runs without a browser. |
 
@@ -171,7 +171,8 @@ the scene store.
 
 ## Viewer settings
 
-The model, how a manager enters Customize mode, the hook and the bar, and how to add a setting are
+The model, how a manager enters Customize mode (from Pascal or from the viewer's own Customize
+tab), the hook, the panel and its field blocks, and how to add a setting are
 in [listing's AGENTS.md](../listing/AGENTS.md#viewer-settings). This template's one setting is the
 opening view, the state the page settles into after its intro:
 
@@ -191,12 +192,24 @@ opening view, the state the page settles into after its intro:
   returns to the opening view as it stands (a manager's draft included).
 - A camera in the link (`?camera=`) still wins over the saved camera; the saved time and mode
   apply with it.
-- **Set current view as opening view** stores the orbit camera (`cameraPose`), the mood the sky is
-  on or gliding to, and the mode (`modeOf`); it is disabled while walking, when the orbit controls
-  are unmounted. **Reset** drops `opening`. The Cut view's plane and X-ray's family are not saved:
-  they open where they always do.
-- The bar sits top centre, under the sound and full screen buttons on screens under 760 px, in
-  the chrome's colours (`showcase.css`).
+- The Customize panel's **Opening view** section (`OpeningSettings.tsx`) shows each field as it
+  will be saved: **Camera** ("Custom" or "Default (frames the house)", with **Use current** and
+  **Clear**), **Time of day** (Default, Night, Dawn, Day, Dusk) and **Mode** (Default and the modes
+  this page offers). Choosing a time glides the sky there and choosing a mode switches to it, so
+  the screen shows what is chosen. **Use current view** sets all three from the screen: the orbit
+  camera (`cameraPose`), the mood the sky is on or gliding to, and the mode (`modeOf`); it is
+  disabled while walking, when the orbit controls are unmounted. `withOpening` (`opening.ts`)
+  changes one field; a field back on Default is dropped, and an opening view with none left is
+  removed. The Cut view's plane and X-ray's family are not saved: they open where they always do.
+- The dial and the phone bar change the screen, never the draft: what Save stores is what the
+  panel shows. When the screen's time or mode differs from it, the panel says so ("On screen now:
+  Day…"). This was the first build's trap: a time changed on the dial after (or without) setting
+  the view was not saved, though the sky showed it.
+- The dial only rests on the four moods (a glide in flight counts as its target), so `time` stays
+  a mood; there is no free minute to save.
+- Collapsed, the Customize pill sits on the right edge under the sound and full screen buttons;
+  open, the panel sits beside them so they stay in reach; on phones it is a sheet across the
+  bottom. Colours follow the chrome, without a blur over the canvas (`showcase.css`).
 
 ## Discovery
 
