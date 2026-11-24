@@ -303,67 +303,110 @@ test('an unsaved draft survives a reload and opens there', async ({ page }) => {
   expect(writes).toHaveLength(0)
 })
 
-// ── Customize from inside the viewer (protocol v1.1) ──
+// ── Managers arrive with the configure pass; Customize from inside the viewer (protocol v1.1, v1.2) ──
 
 const tab = (page: Page) => page.getByRole('button', { name: /^Customize/ })
-const hinted = (access: string) => `/?project=${project}&viewer=${viewer}&access=${access}&configure=available`
+const plain = (access: string) => `/?project=${project}&viewer=${viewer}&access=${access}`
+const hinted = (access: string) => `${plain(access)}&configure=available`
+const granted = `pvh_${'n'.repeat(43)}`
+const callback = (state: string) => `/?code=${code}&state=${state}&iss=${encodeURIComponent(issuer)}`
 
 async function exchange(page: Page, scope?: string) {
   await page.route('**/api/viewer-handoff/exchange', (route) => route.fulfill({ headers: cors, json: {
-    access_token: `pvh_${'n'.repeat(43)}`, token_type: 'Bearer', expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+    access_token: granted, token_type: 'Bearer', expires_at: new Date(Date.now() + 3_600_000).toISOString(),
     project_id: project, viewer_id: viewer, revision: 'published', ...(scope ? { scope } : {}),
   } }))
 }
 
-test('an anonymous entry with the hint opens as before and offers Customize', async ({ page }) => {
-  const reads = await mockPascal(page)
-  await registry(page)
-  await page.goto(hinted('anonymous'))
-  await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
-  await expect(tab(page)).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Customize' })).toHaveCount(0)
-  expect(reads.scene).toBe(1)
-})
+/** The credential each scene read carried. */
+function sceneAuth(page: Page) {
+  const auth: string[] = []
+  page.on('request', (request) => {
+    if (/\/api\/projects\/[^/]+\/scene/.test(request.url()) && request.method() === 'GET') auth.push(request.headers().authorization ?? '')
+  })
+  return auth
+}
 
-for (const access of ['session', 'share'] as const) {
-  test(`a ${access} entry with the hint asks for no scope and keeps the hint in the return path`, async ({ page }) => {
-    await mockPascal(page)
+/** The page left for Pascal to ask for the configure pass from inside the viewer: its request and transaction. */
+async function configureRequest(page: Page, from: string) {
+  await page.waitForURL(`${issuer}/viewer/authorize?*`)
+  const query = new URL(page.url()).searchParams
+  expect(query.get('scope')).toBe('configure')
+  expect(query.get('access')).toBe('session')
+  expect(query.get('interaction')).toBe('sign_in')
+  const saved = await savedTransaction(page)
+  expect(saved.configure).toBe(true)
+  expect(saved.customize).toBe(true)
+  expect(saved.fallbackPath).toBe(from)
+  return { state: query.get('state') as string, saved }
+}
+
+for (const access of ['anonymous', 'session', 'share'] as const) {
+  test(`a manager's ${access} entry (the hint) asks for the configure pass before any read, to come back to the same address without the hint`, async ({ page }) => {
+    const reads = await mockPascal(page)
     await registry(page)
     await authorize(page)
     await page.goto(hinted(access))
-    await page.waitForURL(`${issuer}/viewer/authorize?*`)
-    expect(new URL(page.url()).searchParams.get('scope')).toBeNull()
-    const saved = await savedTransaction(page)
-    expect(saved.configure).toBeUndefined()
-    expect(new URL(saved.returnPath, 'http://x').searchParams.getAll('configure')).toEqual(['available'])
+    const { saved } = await configureRequest(page, hinted(access))
+    expect(saved.returnPath).toBe(plain(access))
+    expect(reads.scene).toBe(0)
   })
 }
 
-test('the hint survives the callback and a renewal', async ({ page, baseURL }) => {
-  await mockPascal(page, () => ({ body: sceneBody({ settings: settings(null, { revision: 0, configureAvailable: true }) }) }))
-  await registry(page)
-  await authorize(page)
-  await exchange(page)
-  await page.goto(hinted('session'))
-  await page.waitForURL(`${issuer}/viewer/authorize?*`)
-  const state = new URL(page.url()).searchParams.get('state')
-  await page.goto(`/?code=${code}&state=${state}&iss=${encodeURIComponent(issuer)}`)
-  await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
-  expect(page.url()).toBe(new URL(hinted('session'), baseURL).href)
-  await expect(tab(page)).toBeVisible()
-})
+for (const access of ['anonymous', 'share'] as const) {
+  test(`a manager arriving on a ${access} entry holds the pass with the panel collapsed, and opens it with no second trip`, async ({ page, baseURL }) => {
+    await mockPascal(page, () => ({ body: sceneBody({ settings: settings(null, { revision: 0, canConfigure: true, configureAvailable: true }) }) }))
+    await registry(page)
+    await authorize(page)
+    await exchange(page, 'configure')
+    const auth = sceneAuth(page)
+    await page.goto(hinted(access))
+    const { state } = await configureRequest(page, hinted(access))
+    await page.goto(callback(state))
+    await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
+    // The address a visitor can open: the access it had, no hint.
+    expect(page.url()).toBe(new URL(plain(access), baseURL).href)
+    expect(auth.at(-1)).toBe(`Bearer ${granted}`)
+    const panel = page.getByRole('region', { name: 'Customize' })
+    await expect(panel).toHaveCount(0)
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
+    await tab(page).click()
+    await expect(panel).toBeVisible()
+    expect(page.url()).toBe(new URL(plain(access), baseURL).href)
+    // The pass lasts for the tab: a reload reads with it and never leaves for Pascal.
+    await page.reload()
+    await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
+    expect(page.url()).toBe(new URL(plain(access), baseURL).href)
+    expect(auth.at(-1)).toBe(`Bearer ${granted}`)
+    await expect(panel).toBeVisible()
+  })
+}
 
-test('a renewal keeps the hint', async ({ page }) => {
+test('a configure pass held on a visitor address renews in place', async ({ page }) => {
   await mockPascal(page)
   await registry(page)
   await authorize(page)
-  await seedConfigureCredential(page, 90_000, { configure: false })
-  await page.goto(hinted('session'))
+  await seedConfigureCredential(page, 90_000)
+  await page.goto(plain('anonymous'))
   await page.waitForURL(`${issuer}/viewer/authorize?*`)
-  expect(new URL(page.url()).searchParams.get('scope')).toBeNull()
+  expect(new URL(page.url()).searchParams.get('scope')).toBe('configure')
   const saved = await savedTransaction(page)
   expect(saved.renewal).toBe(true)
-  expect(new URL(saved.returnPath, 'http://x').searchParams.get('configure')).toBe('available')
+  expect(saved.customize).toBeUndefined()
+  expect(saved.returnPath).toBe(plain('anonymous'))
+})
+
+test('a configure pass already held is kept on an Open from Pascal entry', async ({ page }) => {
+  const reads = await mockPascal(page, () => ({ body: sceneBody({ settings: settings(null, { revision: 0, canConfigure: true }) }) }))
+  await registry(page)
+  await authorize(page)
+  await seedConfigureCredential(page)
+  const auth = sceneAuth(page)
+  await page.goto(plain('session'))
+  await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
+  expect(auth.at(-1)).toBe(`Bearer ${token}`)
+  expect(reads.scene).toBe(1)
+  await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
 })
 
 for (const [name, flag, shown] of [['says configureAvailable', true, true], ['says nothing', undefined, false], ['says false', false, false]] as const) {
@@ -371,71 +414,58 @@ for (const [name, flag, shown] of [['says configureAvailable', true, true], ['sa
     await mockPascal(page, () => ({ body: sceneBody({ settings: settings(null, { revision: 0, configureAvailable: flag }) }) }))
     await registry(page)
     await seedConfigureCredential(page, 3_600_000, { configure: false })
-    await page.goto(`/?project=${project}&viewer=${viewer}&access=session`)
+    await page.goto(plain('session'))
     await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
     await expect(tab(page)).toHaveCount(shown ? 1 : 0)
   })
 }
 
-/** A reader with a credential on a hinted entry presses Customize; returns the authorize request's state. */
-async function startCustomize(page: Page, access: 'session' | 'share', baseURL: string) {
-  await mockPascal(page, () => ({ body: sceneBody({ settings: settings(null, { revision: 0 }) }) }))
+test('a manager without the pass presses Customize: one trip to Pascal, back on the same address with the panel open', async ({ page, baseURL }) => {
+  let pass = false
+  await mockPascal(page, () => ({ body: sceneBody({ settings: settings(null, { revision: 0, canConfigure: pass, configureAvailable: true }) }) }))
   await registry(page)
   await authorize(page)
-  await seedConfigureCredential(page, 3_600_000, { configure: false, access, accessToken: token })
-  await page.goto(hinted(access))
+  await exchange(page, 'configure')
+  await seedConfigureCredential(page, 3_600_000, { configure: false })
+  await page.goto(plain('session'))
   await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
   await tab(page).click()
-  await page.waitForURL(`${issuer}/viewer/authorize?*`)
-  const query = new URL(page.url()).searchParams
-  expect(query.get('scope')).toBe('configure')
-  expect(query.get('access')).toBe('session')
-  expect(query.get('interaction')).toBe('sign_in')
-  const state = query.get('state')!
-  const saved = await savedTransaction(page)
-  expect(saved.customize).toBe(true)
-  expect(saved.fallbackPath).toBe(hinted(access))
-  expect(new URL(saved.returnPath, baseURL).searchParams.get('configure')).toBe('1')
-  expect(new URL(saved.returnPath, baseURL).searchParams.get('access')).toBe('session')
-  return state
-}
-
-test('Customize from inside the viewer comes back in configure mode with the panel open', async ({ page, baseURL }) => {
-  const state = await startCustomize(page, 'session', baseURL!)
-  await exchange(page, 'configure')
-  await page.unroute('**/api/projects/*/scene*')
-  await page.route('**/api/projects/*/scene*', (route) => route.fulfill({ headers: cors, contentType: 'application/json',
-    body: sceneBody({ settings: settings(null, { revision: 0, canConfigure: true, configureAvailable: true }) }) }))
-  await page.goto(`/?code=${code}&state=${state}&iss=${encodeURIComponent(issuer)}`)
+  const { state, saved } = await configureRequest(page, plain('session'))
+  expect(saved.returnPath).toBe(plain('session'))
+  pass = true
+  await page.goto(callback(state))
   await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
-  expect(new URL(page.url()).searchParams.get('configure')).toBe('1')
+  expect(page.url()).toBe(new URL(plain('session'), baseURL).href)
   await expect(page.getByRole('region', { name: 'Customize' })).toBeVisible()
   const stored = await page.evaluate(() => JSON.parse(sessionStorage.getItem(Object.keys(sessionStorage).find((key) => key.startsWith('pascal:credential:'))!)!))
   expect(stored.configure).toBe(true)
 })
 
-for (const [refusal, access] of [['access_denied', 'session'], ['access_denied', 'share'], ['no configure scope', 'session']] as const) {
-  test(`refused Customize (${refusal}, ${access} reader) returns to the same view and hides the entry`, async ({ page, baseURL }) => {
-    const state = await startCustomize(page, access, baseURL!)
-    const auth: string[] = []
-    page.on('request', (request) => {
-      if (/\/api\/projects\/[^/]+\/scene/.test(request.url()) && request.method() === 'GET') auth.push(request.headers().authorization ?? '')
-    })
+for (const [refusal, access] of [['access_denied', 'anonymous'], ['access_denied', 'session'], ['access_denied', 'share'], ['no configure scope', 'session']] as const) {
+  test(`a refused configure pass (${refusal}, ${access} entry) returns to the same view and hides the entry`, async ({ page, baseURL }) => {
+    await mockPascal(page, () => ({ body: sceneBody({ settings: settings(null, { revision: 0 }) }) }))
+    await registry(page)
+    await authorize(page)
+    if (access !== 'anonymous') await seedConfigureCredential(page, 3_600_000, { configure: false, access, accessToken: token })
+    await page.goto(hinted(access))
+    const { state } = await configureRequest(page, hinted(access))
+    const auth = sceneAuth(page)
     if (refusal === 'access_denied') {
       await page.goto(`/?error=access_denied&state=${state}&iss=${encodeURIComponent(issuer)}`)
     } else {
       await exchange(page)
-      await page.goto(`/?code=${code}&state=${state}&iss=${encodeURIComponent(issuer)}`)
+      await page.goto(callback(state))
     }
     await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
     expect(page.url()).toBe(new URL(hinted(access), baseURL).href)
-    // The reader's own credential, untouched; never a refusal screen.
-    expect(auth.at(-1)).toBe(`Bearer ${token}`)
+    // The access the entry gives, untouched; never a refusal screen.
+    expect(auth.at(-1)).toBe(access === 'anonymous' ? '' : `Bearer ${token}`)
     await expect(page.locator('main[data-state="refused"]')).toHaveCount(0)
     await expect(tab(page)).toHaveCount(0)
-    // For the rest of the tab.
+    // For the rest of the tab: the hint is not tried again.
     await page.reload()
     await expect(page.locator(READY)).toBeVisible({ timeout: 20_000 })
+    expect(page.url()).toBe(new URL(hinted(access), baseURL).href)
     await expect(tab(page)).toHaveCount(0)
   })
 }

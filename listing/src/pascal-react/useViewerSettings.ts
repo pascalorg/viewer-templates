@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { customizeHinted, customizeRefused, enterCustomize, saveSettings, type ViewerSettings, ViewerSettingsError } from '../pascal'
+import { customizeHinted, customizeRefused, customizeRequested, enterCustomize, saveSettings, type ViewerSettings, ViewerSettingsError } from '../pascal'
 import { handoffNavigating } from '../pascal/handoff'
 import { rememberPanelOpen } from './panelState'
 
@@ -23,14 +23,19 @@ export type ViewerSettingsHandle<T> = {
   value: T
   /** What visitors get now. */
   saved: T
-  /** This visitor is in Customize mode (a configure credential): they may change and save. */
-  canConfigure: boolean
   /**
-   * Offer Customize: the visitor is in it, or may enter it (the read's `configureAvailable` or the
-   * entry's `configure=available` hint), and Pascal has not refused it in this tab.
+   * This visitor holds the configure pass: they may change and save. A manager Pascal sent here
+   * (Open in this viewer, their own share link) arrives with it.
+   */
+  canConfigure: boolean
+  /** Pascal's Customize link brought the visitor here: the panel opens on arrival. */
+  requested: boolean
+  /**
+   * Offer Customize: the visitor holds the pass, or may ask for it (the read's `configureAvailable`
+   * or the entry's `configure=available` hint), and Pascal has not refused it in this tab.
    */
   available: boolean
-  /** Enters Customize: leaves for Pascal and comes back in configure mode (or, refused, where it was). */
+  /** For a manager without the pass: leaves for Pascal and comes back with it (or, refused, where it was). */
   enter(): Promise<void>
   /** `enter` is on its way to Pascal. */
   entering: boolean
@@ -94,6 +99,7 @@ export function useViewerSettings<T>({ settings, token, baseUrl, projectId, pars
   const canConfigure = settings?.canConfigure === true
   // The entry's hint is read once: the address changes on the way in, not while the page is open.
   const [hinted] = useState(() => customizeHinted(projectId, baseUrl))
+  const [requested] = useState(() => customizeRequested(projectId))
   const available = canConfigure ||
     ((settings?.configureAvailable === true || hinted) && !customizeRefused(projectId, baseUrl))
   const [entering, setEntering] = useState(false)
@@ -209,5 +215,5 @@ export function useViewerSettings<T>({ settings, token, baseUrl, projectId, pars
     }
   }, [canConfigure, entering, projectId, baseUrl])
 
-  return { value, saved, canConfigure, available, enter, entering, enterError, dirty, status, error, set, save, discard, reloadLatest }
+  return { value, saved, canConfigure, requested, available, enter, entering, enterError, dirty, status, error, set, save, discard, reloadLatest }
 }

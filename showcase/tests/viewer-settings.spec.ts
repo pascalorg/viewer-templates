@@ -157,10 +157,10 @@ test('a manager picks the time of day and mode in the panel: the screen follows 
   expect(writes[2]).toEqual({ revision: 5, data: { v: 1, other: true } })
 })
 
-test('a manager arriving from Open in Pascal sees a collapsed Customize entry', async ({ page }) => {
-  await mockPascal(page, () => ({ body: withSettings(settings(null, { revision: 0, configureAvailable: true })) }))
-  await seedConfigureCredential(page, { configure: false })
-  await page.goto(`/?project=${PROJECT}&viewer=${VIEWER}&access=session&configure=available`)
+test('a manager arriving from Open in Pascal holds the pass behind a collapsed Customize entry, and opens it in place', async ({ page }) => {
+  await mockPascal(page, () => ({ body: withSettings(settings(null, { revision: 0, canConfigure: true })) }))
+  await seedConfigureCredential(page)
+  await page.goto(`/?project=${PROJECT}&viewer=${VIEWER}&access=session`)
   await expect(page.locator(READY)).toBeVisible({ timeout: 60_000 })
   const entry = page.getByRole('button', { name: 'Customize', exact: true })
   await expect(entry).toBeVisible()
@@ -171,6 +171,9 @@ test('a manager arriving from Open in Pascal sees a collapsed Customize entry', 
     const box = (await utility.boundingBox())!
     expect(box.y + box.height <= tab.y || tab.y + tab.height <= box.y || box.x + box.width <= tab.x || tab.x + tab.width <= box.x).toBe(true)
   }
+  await entry.click()
+  await expect(page.getByRole('region', { name: 'Customize' })).toBeVisible()
+  expect(new URL(page.url()).searchParams.has('configure')).toBe(false)
 })
 
 test.describe('with motion', () => {

@@ -4,7 +4,7 @@ import type { ViewerSettingsHandle } from './useViewerSettings'
 import './settings-panel.css'
 
 type PanelSettings = Pick<ViewerSettingsHandle<unknown>,
-  'canConfigure' | 'available' | 'enter' | 'entering' | 'enterError' |
+  'canConfigure' | 'requested' | 'available' | 'enter' | 'entering' | 'enterError' |
   'dirty' | 'status' | 'error' | 'save' | 'discard' | 'reloadLatest'>
 
 function message({ status, dirty, error }: PanelSettings): string {
@@ -45,8 +45,9 @@ function CollapseIcon() {
 /**
  * Customize: how a project's managers change how this viewer presents the project, and nobody
  * else sees it. Collapsed, a "Customize" tab on the right edge (shown only to someone who may
- * customise: see `useViewerSettings().available`); pressed before Customize mode, it enters it
- * through Pascal. Expanded, a panel with the template's fields (`children`, built from
+ * customise: see `useViewerSettings().available`); pressed, it opens the panel, going through
+ * Pascal first for a manager who arrived without the pass. It starts expanded only from Pascal's
+ * Customize link. Expanded, a panel with the template's fields (`children`, built from
  * `SettingsSection`, `SettingsRow` and `SettingsOptions`), the save state, Discard and Save.
  *
  * Collapsing keeps the draft (the tab shows a dot while there is one); the open state is
@@ -60,7 +61,7 @@ export function SettingsPanel({ settings, children, title = 'Customize', descrip
   /** One line under the title; says what is being customised. */
   description?: ReactNode
 }) {
-  const [open, setOpen] = useState(() => settings.canConfigure && (readPanelOpen() ?? true))
+  const [open, setOpen] = useState(() => settings.canConfigure && (readPanelOpen() ?? settings.requested))
   const panelId = useId()
   const titleId = useId()
   const tab = useRef<HTMLButtonElement>(null)

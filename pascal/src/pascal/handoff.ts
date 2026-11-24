@@ -28,8 +28,9 @@ export type Transaction = {
   /** Asked for `scope=configure`; session access only. */
   configure?: boolean
   /**
-   * Customize started from inside the viewer (`enterCustomize`): a refusal returns to
-   * `fallbackPath`, the view the visitor had, instead of the refusal screen.
+   * The configure pass asked for from inside the viewer (on arrival with Pascal's hint, or
+   * `enterCustomize`): a refusal returns to `fallbackPath`, the view the visitor had, instead of
+   * the refusal screen.
    */
   customize?: boolean
   fallbackPath?: string
@@ -187,6 +188,12 @@ function hintOnly(query: URLSearchParams): boolean {
   return query.getAll('configure').length <= 1 && [null, 'available'].includes(query.get('configure'))
 }
 
+/** A page of this project in this viewer: it may name them, never another. */
+function thisPage(query: URLSearchParams, project: string, viewer: string): boolean {
+  return query.getAll('project').length <= 1 && [null, project].includes(query.get('project')) &&
+    query.getAll('viewer').length <= 1 && [null, viewer].includes(query.get('viewer'))
+}
+
 /** Only local paths survive the round trip; protocol-relative paths and callback material do not. */
 function localReturnPath(path: string): string {
   if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) throw new ReopenRequired()
@@ -208,8 +215,13 @@ export function handoffNavigating(): boolean {
 }
 
 /**
- * `customize`: Customize started from inside the viewer (implies `configure`). The page it starts
- * from is the fallback a refusal returns to; it must not itself be asking for configure mode.
+ * `customize`: the configure pass asked for from inside the viewer, on arrival with Pascal's hint
+ * or from the Customize tab (implies `configure`). The page it starts from is the fallback a
+ * refusal returns to; it must not itself be asking for configure mode.
+ *
+ * Only Pascal's Customize link (`configure=1`) comes back to a `configure=1` address. Every other
+ * configure pass (from inside the viewer, or renewing one) comes back to the page it left: same
+ * address and `access`, without the hint it has used, so the address stays one a visitor can open.
  */
 export async function startAuthorize(
   issuer: string, descriptor: Descriptor, project: string, access: AccessMode, renewal = false, signIn = false,
@@ -223,16 +235,18 @@ export async function startAuthorize(
   const here = localReturnPath(location.pathname + location.search + location.hash)
   if (customize && !hintOnly(new URL(here, location.origin).searchParams)) throw new ReopenRequired(access)
   const returnUrl = new URL(location.href)
-  if (!signIn) {
+  const asked = returnUrl.searchParams.getAll('configure')
+  const inPlace = configure && !(asked.length === 1 && asked[0] === '1')
+  if (!signIn && !inPlace) {
     returnUrl.searchParams.set('project', project)
     returnUrl.searchParams.set('viewer', descriptor.viewer_id)
     returnUrl.searchParams.set('access', access)
   }
-  // Configure mode survives the round trip in the return path, and so does Pascal's hint that the
-  // visitor may enter it; nothing else asks for either.
-  const hinted = returnUrl.searchParams.getAll('configure').length === 1 && returnUrl.searchParams.get('configure') === 'available'
-  if (configure) returnUrl.searchParams.set('configure', '1')
-  else if (hinted) returnUrl.searchParams.set('configure', 'available')
+  // Pascal's Customize link survives the round trip in the return path. So does its hint, until a
+  // configure pass is asked for: the hint is then used, whatever Pascal answers.
+  if (inPlace) returnUrl.searchParams.delete('configure')
+  else if (configure) returnUrl.searchParams.set('configure', '1')
+  else if (asked.length === 1 && asked[0] === 'available') returnUrl.searchParams.set('configure', 'available')
   else returnUrl.searchParams.delete('configure')
   const transaction: Transaction = {
     verifier, state, issuer, viewer: descriptor.viewer_id, project,
@@ -307,6 +321,8 @@ export async function exchangeCallback(
     const returnQuery = new URL(returnPath, location.origin).searchParams
     const fallbackPath = transaction.customize ? localReturnPath(transaction.fallbackPath!) : null
     const fallbackQuery = fallbackPath ? new URL(fallbackPath, location.origin).searchParams : null
+    // A configure pass that was not Pascal's Customize link returns to the page it left.
+    const inPlace = transaction.configure === true && returnQuery.get('configure') !== '1'
     if (
       !callback.valid ||
       (callback.code !== null && !/^pvc_[A-Za-z0-9_-]{43}$/.test(callback.code)) ||
@@ -322,21 +338,20 @@ export async function exchangeCallback(
             (returnQuery.getAll('viewer').length !== 1 || returnQuery.get('viewer') !== transaction.viewer ||
               returnQuery.getAll('access').length !== 1 || ![access, 'anonymous'].includes(returnQuery.get('access') || ''))) ||
           !hintOnly(returnQuery)
-        : returnQuery.get('project') !== project || returnQuery.get('viewer') !== transaction.viewer ||
-          returnQuery.get('access') !== access ||
-          (transaction.configure === true
-            ? returnQuery.getAll('configure').length !== 1 || returnQuery.get('configure') !== '1'
-            : !hintOnly(returnQuery))) ||
-      // The view Customize started from: this project, this viewer, and not itself configure mode.
-      (fallbackQuery !== null &&
-        (!hintOnly(fallbackQuery) ||
-          fallbackQuery.getAll('project').length > 1 || ![null, project].includes(fallbackQuery.get('project')) ||
-          fallbackQuery.getAll('viewer').length > 1 || ![null, transaction.viewer].includes(fallbackQuery.get('viewer'))))
+        : inPlace
+          ? returnQuery.has('configure') || !thisPage(returnQuery, project, transaction.viewer)
+          : returnQuery.get('project') !== project || returnQuery.get('viewer') !== transaction.viewer ||
+            returnQuery.get('access') !== access ||
+            (transaction.configure === true
+              ? returnQuery.getAll('configure').length !== 1
+              : !hintOnly(returnQuery))) ||
+      // The view the pass was asked from: this project, this viewer, and not itself configure mode.
+      (fallbackQuery !== null && (!hintOnly(fallbackQuery) || !thisPage(fallbackQuery, project, transaction.viewer)))
     ) throw new ReopenRequired(access)
     if (callback.error !== null) {
       if (fallbackPath !== null) {
-        // Customize from inside the viewer was refused (a forged hint, a demoted manager): back to
-        // the view the visitor had, with the entry hidden for the rest of the tab.
+        // The pass asked for from inside the viewer was refused (a forged hint, a demoted manager):
+        // back to the view the visitor had, with the entry hidden for the rest of the tab.
         history.replaceState(history.state, '', fallbackPath)
         rememberCustomize(issuer, project, true)
         throw new CustomizeRefused()

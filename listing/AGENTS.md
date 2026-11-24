@@ -200,29 +200,36 @@ every later visitor gets it. This template's one setting is the opening view.
 - **Tolerate stale data.** Settings outlive the scene they were made on: ids of deleted rooms or
   items, another build's shape. Parse with fallbacks and drop what no longer exists; never crash.
 
-**How a manager gets there.** Two ways, both ending in configure mode (a configure credential,
-and the read's `settings.canConfigure: true`):
+**How a manager gets there.** Three ways, all ending with a configure credential (the read then
+says `settings.canConfigure: true`):
 
 - *From Pascal.* The Share popover's **Customize** (managers only, once the project is published
   and bound to this viewer) opens the entry URL with `configure=1`. The helper authorizes with
   `scope=configure` at once.
-- *From inside the viewer.* Pascal tells the viewer who may customise: the entry URL carries
-  `configure=available` (Open in this viewer, or a share link, for a signed-in manager; any
-  `access`), or the read says `settings.configureAvailable: true` (a session credential whose user
-  manages the project, so also after **Sign in with Pascal** here). Either one shows a collapsed
-  **Customize** tab; neither grants anything. Pressing it calls `enterCustomize(projectId,
-  baseUrl)`: session authorize with `scope=configure` and `interaction=sign_in`, back with
-  `configure=1`. If Pascal refuses (a forged hint, a manager who lost access; Pascal may show its
-  own refusal page first), the callback's `error=access_denied` returns the visitor to the exact
-  address they left with the access they had (the transaction keeps it as `fallbackPath`; it must
-  be this project and viewer and never itself `configure=1`), and `customizeRefused()` keeps the
-  tab hidden for the rest of the browser tab. They never land on a refusal screen. An exchange
-  that does not grant `"scope": "configure"` counts as the same refusal; from a `configure=1` link
-  it asks to reopen, as before.
+- *On arrival.* When a signed-in manager opens this viewer from Pascal or follows their own share
+  link, the entry URL carries `configure=available` (any `access`). The hint grants nothing, so
+  `resolveAccess` asks Pascal for the configure credential at once, before the first read, in
+  place of the handoff the entry's `access` would start: session authorize with `scope=configure`
+  and `interaction=sign_in`. The manager arrives holding it, with a collapsed **Customize** tab
+  that opens the panel with no second trip. The viewer comes back to the address it arrived on,
+  same `access`, hint removed, so the address stays one any visitor can open.
+- *From the tab.* A manager who holds an ordinary session credential (they signed in here, or
+  opened an address without the hint) gets `settings.configureAvailable: true` on the read, which
+  shows the same collapsed tab. Pressing it calls `enterCustomize(projectId, baseUrl)`: the same
+  authorize, back to the same address with the panel open.
 
-The hint survives the viewer's own authorize round trips (share and session handoff, renewal) in
-the return path; `configure=1` survives only a configure transaction, and any other `configure`
-value is not a link Pascal makes (the page asks to reopen). A configure credential renews as one.
+If Pascal refuses either of the last two (a forged hint, a manager who lost access; Pascal may
+show its own refusal page first), the callback's `error=access_denied` returns the visitor to the
+exact address they left with the access they had (the transaction keeps it as `fallbackPath`; it
+must be this project and viewer and never itself `configure=1`), and `customizeRefused()` keeps
+the tab hidden, and the hint unused, for the rest of the browser tab. They never land on a refusal
+screen. An exchange that does not grant `"scope": "configure"` counts as the same refusal; from a
+`configure=1` link it asks to reopen, as before.
+
+`configure=1` survives only the round trip of Pascal's Customize link, and any other `configure`
+value is not a link Pascal makes (the page asks to reopen). A configure credential held in the tab
+is kept whatever a later entry says, and renews as one, in place. The panel starts open only from
+`configure=1` (`useViewerSettings().requested`); after that the tab remembers how it was left.
 Leaving Customize changes no credential: collapse the panel and, with no draft, the manager sees
 what visitors see. Everyone else makes the same requests as before and reads `settings` read-only.
 

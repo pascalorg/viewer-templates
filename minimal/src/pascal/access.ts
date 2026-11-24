@@ -48,6 +48,9 @@ export async function signIn(projectId: string, baseUrl = 'https://editor.pascal
  * Whether this visitor may be offered Customize from the entry URL alone: Pascal's
  * `configure=available` hint for this project, unless Pascal refused Customize in this tab. The
  * scene read's `settings.configureAvailable` is the other signal; either is enough to offer it.
+ *
+ * `resolveAccess` uses the hint on arrival (it asks Pascal for the configure pass and drops the
+ * hint from the address), so this is true only on a page that has not resolved its access yet.
  */
 export function customizeHinted(projectId: string, baseUrl = 'https://editor.pascal.app'): boolean {
   if (customizeRefused(projectId, baseUrl)) return false
@@ -59,16 +62,31 @@ export function customizeHinted(projectId: string, baseUrl = 'https://editor.pas
   }
 }
 
+/**
+ * Pascal's Customize link (`configure=1`) brought the visitor to this project: the panel opens on
+ * arrival. A manager who arrives any other way holds the same pass with the panel collapsed.
+ */
+export function customizeRequested(projectId: string): boolean {
+  try {
+    const entry = detectEntry()
+    return !!entry && entry.project === projectId && entry.configure
+  } catch {
+    return false
+  }
+}
+
 /** Pascal refused Customize from inside the viewer in this tab: do not offer it again until the tab closes. */
 export function customizeRefused(projectId: string, baseUrl = 'https://editor.pascal.app'): boolean {
   return customizeWasRefused(new URL(baseUrl).origin, projectId)
 }
 
 /**
- * Explicit user action: enter Customize from inside the viewer. Leaves for Pascal's authorize page
- * (session access, `scope=configure`, sign-in allowed) and comes back in configure mode, the
- * scene read then saying `canConfigure: true`. If Pascal refuses, the visitor comes back to this
- * exact page with the access they had, and `customizeRefused` is true for the rest of the tab.
+ * Explicit user action: enter Customize from inside the viewer, for a manager who does not hold
+ * the configure pass yet (they arrived without Pascal's hint, and the read says
+ * `configureAvailable`). Leaves for Pascal's authorize page (session access, `scope=configure`,
+ * sign-in allowed) and comes back to this page with the pass, the scene read then saying
+ * `canConfigure: true`. If Pascal refuses, the visitor comes back to this exact page with the
+ * access they had, and `customizeRefused` is true for the rest of the tab.
  */
 export async function enterCustomize(projectId: string, baseUrl = 'https://editor.pascal.app'): Promise<void> {
   const issuer = new URL(baseUrl).origin
@@ -139,13 +157,21 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
       if (entry && (entry.project !== projectId || (descriptor && entry.viewer !== descriptor.viewer_id))) {
         throw new ReopenRequired(mode)
       }
+      // Pascal's hint says this visitor manages the project: ask for the configure pass on the way
+      // in, so Customize opens with no second trip. Refused, they keep the access the entry gives.
+      const arriving = !!descriptor && !!entry && entry.configureAvailable && !customizeWasRefused(issuer, projectId)
+      const arrive = async (): Promise<Access> => {
+        await startAuthorize(issuer, descriptor!, projectId, 'session', false, false, true, true)
+        return { kind: 'opening' }
+      }
       if (descriptor) {
         const credential = readCredential(issuer, descriptor.viewer_id, projectId)
-        // Customize and Open from Pascal ask for different credentials; an entry gets the one it asked for.
-        if (credential && entry?.access === 'session' && entry.configure !== (credential.configure === true)) {
-          await startAuthorize(issuer, descriptor, projectId, 'session', false, false, entry.configure)
+        // Pascal's Customize link gets the pass it asks for. A configure pass already held is kept.
+        if (credential && credential.configure !== true && entry?.access === 'session' && entry.configure) {
+          await startAuthorize(issuer, descriptor, projectId, 'session', false, false, true)
           return { kind: 'opening' }
         }
+        if (credential && credential.configure !== true && arriving) return arrive()
         if (credential) {
           if (Date.parse(credential.expires_at) - Date.now() <= RENEW_MARGIN) return renew(credential, descriptor)
           return { kind: 'credential', credential }
@@ -153,6 +179,7 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
         const refusal = rejectedAccess(issuer, descriptor.viewer_id, projectId)
         if (refusal && (!entry || entry.access === 'anonymous')) throw new ReopenRequired(refusal)
       }
+      if (arriving) return arrive()
       if (entry && entry.access !== 'anonymous') {
         if (!descriptor) throw new ReopenRequired(mode)
         await startAuthorize(issuer, descriptor, projectId, entry.access, false, false, entry.configure)
