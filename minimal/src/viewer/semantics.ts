@@ -8,6 +8,8 @@ import {
   zoneContains,
   zoneInfo,
 } from '../pascal'
+import { FURNITURE_KINDS } from '../spaces'
+import { pascalHover, pascalLabel } from './pascalRules'
 
 /** What Pascal stamps on GLB nodes as glTF `extras` (three exposes them as `userData`). */
 export type PascalExtras = {
@@ -428,9 +430,9 @@ function roomFloor(zone: ZoneEntry): Box3 {
 }
 
 /** Kinds a whole thing is made of, for what a room contains. */
-const THING_KINDS = new Set(['item', 'door', 'window', 'stair'])
+const THING_KINDS = new Set(['item', 'door', 'window', 'stair', ...FURNITURE_KINDS])
 
-/** The outermost item, door, window or stair a mesh is part of, below its level; else itself. */
+/** The outermost thing (item, furniture, door, window, stair) a mesh is part of, below its level; else itself. */
 function anchorOf(mesh: Mesh): Object3D {
   let anchor: Object3D = mesh
   for (let current = findIdentity(mesh); current; current = findIdentity(current.parent)) {
@@ -477,11 +479,15 @@ export function roomMembers(index: SceneIndex, room: ZoneEntry): Set<Mesh> {
   return members
 }
 
-/** A thing's name for the callout: its label in the file, its name in the graph, or its kind. */
+/**
+ * A thing's name for the callout, as Pascal's viewer gives it (`pascalLabel`: its name, an item's
+ * catalogue name, or a word for its kind); else its label in the file, or its kind.
+ */
 export function thingName(graph: SceneGraph, thing: Object3D): string {
   const extras = extrasOf(thing)
-  const node = extras.pascalId ? getNode(graph, extras.pascalId) : undefined
-  const name = extras.label?.trim() || (typeof node?.name === 'string' ? node.name.trim() : '')
+  const pascal = extras.pascalId ? pascalLabel(graph, extras.pascalId) : null
+  if (pascal) return pascal
+  const name = extras.label?.trim()
   if (name) return name
   const kind = (extras.kind ?? 'item').split(':').pop()!.replace(/[-_]/g, ' ')
   return kind.charAt(0).toUpperCase() + kind.slice(1)
@@ -503,17 +509,27 @@ export function levelBounds(index: SceneIndex, levelId: string): Box3 | null {
   return box.isEmpty() ? null : box
 }
 
-/** Kinds hover lights up in the accent colour: the things in a room, and what opens. */
-const HIGHLIGHT_KINDS = new Set(['item', 'door', 'window'])
+/** What the drawing answers with a room, not a thing: Pascal's viewer does the same for its rooms' surfaces. */
+const ROOM_SURFACES = new Set(['wall', 'slab', 'ceiling'])
 
-/** The item, door or window a hit belongs to. */
-export function highlightAt(hit: Intersection): Object3D | null {
-  for (let current = findIdentity(hit.object); current; current = findIdentity(current.parent)) {
-    const kind = extrasOf(current).kind
-    if (kind === 'level' || kind === 'building') return null
-    if (kind && HIGHLIGHT_KINDS.has(kind)) return current
+/**
+ * The thing a hit belongs to, by Pascal's own viewer rule (`pascalHover`): the nearest Pascal node
+ * above the hit, of any kind but the ones a click passes through (site, building, level, zone,
+ * scans, guides) and the room's own surfaces, or the node it hands its selection to. So a cabinet
+ * module names itself rather than its run, a microwave on a shelf itself, and a kind added to
+ * Pascal later hovers without a change here.
+ */
+export function highlightAt(hit: Intersection, graph: SceneGraph): Object3D | null {
+  const identity = findIdentity(hit.object)
+  const id = identity && extrasOf(identity).pascalId
+  if (!identity || !id) return null
+  const hovered = pascalHover(graph, id)
+  const node = hovered ? getNode(graph, hovered) : undefined
+  if (!hovered || !node || ROOM_SURFACES.has(node.type)) return null
+  for (let current: Object3D | null = identity; current; current = findIdentity(current.parent)) {
+    if (extrasOf(current).pascalId === hovered) return current
   }
-  return null
+  return identity
 }
 
 /** The Pascal kind a mesh is part of: its nearest identity's, or a parent's for unnamed parts. */

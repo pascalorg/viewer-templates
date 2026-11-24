@@ -90,7 +90,6 @@ function Scene({
   const [helpOpen, setHelpOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [model, setModel] = useState<ModelInfo | null>(null)
-  const [liveReady, setLiveReady] = useState(false)
   const [openError, setOpenError] = useState(false)
   const [hover, setHover] = useState<PointerHover | null>(null)
   const narrow = useNarrow()
@@ -239,7 +238,7 @@ function Scene({
   }
 
   const live = state.kind === 'live'
-  const ready = live ? liveReady : !!model
+  const ready = !!model
   const progress = state.kind === 'downloading' ? state.progress : live ? null : 1
   const focus: FocusProps = {
     levelId,
@@ -272,11 +271,17 @@ function Scene({
         <ViewerBoundary onError={handleError}>
           <Suspense fallback={null}>
             {live ? (
-              <LiveViewer {...focus} onError={handleError} onSceneReadyChange={setLiveReady} scene={scene} />
+              <LiveViewer
+                {...focus}
+                label={`${projectName(scene)}, interactive 3D view`}
+                onError={handleError}
+                onReady={setModel}
+                scene={scene}
+              />
             ) : state.kind === 'ready' ? (
               <Viewer
                 {...focus}
-                bytes={state.bytes}
+                source={state.bytes}
                 graph={scene.graph}
                 label={`${projectName(scene)}, interactive 3D view`}
                 onError={handleError}

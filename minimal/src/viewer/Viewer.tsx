@@ -5,11 +5,12 @@ import type { SceneGraph } from '../pascal'
 import { AxoControls } from './AxoControls'
 import { GLAZING_LAYER, InkPass, OBJECT_LAYER, OWN_INK_LAYER } from './InkPass'
 import { MeasureTool } from './MeasureTool'
-import { type FocusProps, Model, type ModelInfo } from './Model'
+import { type FocusProps, Model, type ModelInfo, type ModelSource } from './Model'
 import { STYLE } from './style'
 
 export type ViewerProps = FocusProps & {
-  bytes: ArrayBuffer
+  /** The baked file, or a scene captured from Pascal's runtime (`LiveViewer`). */
+  source: ModelSource
   graph: SceneGraph
   label: string
   onReady: (info: ModelInfo) => void

@@ -16,7 +16,7 @@ The read API contract, what the baked GLB contains, access, deployment and the s
 | `src/pascal/` | The API client and access helpers, byte-identical to `listing/src/pascal/`. No React, no three.js. |
 | `src/useListing.ts` | Loading flow: choose a ready bake or the live graph; poll while baking. |
 | `src/App.tsx` | Screens, and the scene's state: floor, room, item, panels, tool; the keyboard map; the panels' insets for framing. |
-| `src/spaces.ts` | Floors, rooms (area, size, ceiling, Pascal's room details) and their items, read from the graph alone, so both renderers list the same. |
+| `src/spaces.ts` | Floors, rooms (area, size, ceiling, Pascal's room details) and their contents (items and furniture), read from the graph alone, so both renderers list the same. |
 | `src/ui/` | The overlay: `SpacesPanel` (title, Spaces button, floors and rooms with search), `Inspector` (a room's or an item's details), `Dock` (the bar, the measure and section strips), `Marks` (pointer tag, room tags, measure marks, toast, shortcut sheet), `tagLayout` (placing room tags without overlap), `icons`, `format`. |
 | `src/styles.css` | The overlay's tokens (top of the file) and components, the loader, the status screens. |
 | `src/viewer/style.ts` | The look: paper, ink, accent, a tone per surface role, the two lights, and the shared materials. |
@@ -27,7 +27,8 @@ The read API contract, what the baked GLB contains, access, deployment and the s
 | `src/viewer/measure.ts`, `MeasureTool.tsx` | The measure tool: its store (points, preview, their screen positions), and the canvas side that picks and snaps points, for both renderers. |
 | `src/viewer/Viewer.tsx` | The baked canvas: orthographic camera, camera-relative light, `Model`, `AxoControls`, `InkPass`. |
 | `src/viewer/Model.tsx` | Parses the GLB, swaps every material for its role's tone (leaves keep their cutout), floor visibility, hover highlight, the room cutaway, door and window clips. |
-| `src/viewer/LiveViewer.tsx` | Lazy live runtime in Pascal's monochrome look (white preset, ink edges, no materials, no ground). |
+| `src/viewer/LiveViewer.tsx`, `liveCapture.ts` | An unbaked project: Pascal's runtime (lazy) builds it on a hidden canvas, `captureLiveScene` copies it shaped like a bake, with the open clips Pascal's pose code makes, and the baked `Viewer` draws the copy. |
+| `src/viewer/pascalRules.ts` | Pascal's viewer rules for what hover lands on and what a node is called: copies of `resolveViewerHover` and `nodeDisplayLabel` from `@pascal-app/viewer/ui`. |
 | `src/viewer/semantics.ts` | Maps GLB nodes to Pascal identities: floors, rooms and their bounds, walls and what is set in them, which walls hide a room, openables, what hover lights up. |
 | `src/viewer/loaders.ts` | GLTFLoader with the meshopt decoder and KTX2 transcoder Pascal's files need. |
 | `vite.config.ts` | Build, and the Content-Security-Policy written into `index.html`. |
@@ -48,9 +49,10 @@ The read API contract, what the baked GLB contains, access, deployment and the s
   above `depthThreshold`, at least 3 cm or 4 pixels). It needs the orthographic camera: depth is
   linear there, so sloped planes never ink. Lines come in three weights, read from the tag the
   normal pass writes in alpha (`style.ts`): silhouettes and cuts of structure draw on both
-  sides of the step (heaviest); objects (`OBJECT_LAYER`, kinds item, door, window: the normal
+  sides of the step (heaviest); objects (`OBJECT_LAYER`, kinds item, door, window and the
+  furniture kinds: the normal
   pass draws them with `OBJECT_TAG`) draw their outline on their own side at `STYLE.objectInk`;
-  creases draw one pixel on one side at `STYLE.creaseInk`, fading towards `STYLE.creaseFar` as
+  creases draw at `STYLE.creaseInk`, two pixels wide on structure and one, on one side, on objects, fading towards `STYLE.creaseFar` as
   the drawing zooms out (`creaseFadeZoom`), so fine repeating lines don't shimmer. Single-sided
   lines keep thin frames from drawing as two or three parallel strokes. The pass renders at
   least at `STYLE.inkResolution` (2) pixels to the CSS pixel: on a 1x monitor at twice its
@@ -85,8 +87,7 @@ The read API contract, what the baked GLB contains, access, deployment and the s
   they write `GHOST_TAG` in the normal pass's alpha, so the ink draws them at `STYLE.ghostInk`
   (about 40%) and the rest of the house stays legible around the room. A floor change or the close button (or Esc) deselects; close frames the
   floor shown (or the building) again. Changing floor eases the camera onto `levelBounds`: the
-  floor's walls, slabs and roofs, not the garden around them. The live path selects and frames
-  rooms and floors too, without the fade. A door or window touching the room's outline is one
+  floor's walls, slabs and roofs, not the garden around them. A door or window touching the room's outline is one
   of its members, so it can be opened from inside.
 - **Site.** The ground (kind `site`) draws on `OWN_INK_LAYER` with `inkNormalMaterial({ soft })`,
   which writes `SOFT_TAG` in alpha: the ink draws its lines at `STYLE.siteInk`, and its edge
@@ -98,16 +99,24 @@ The read API contract, what the baked GLB contains, access, deployment and the s
   roof level. That level's meshes (`meshesByLevel`) wash with `tintMaterial` (`STYLE.levelTint`
   of `STYLE.hover`, `Drawn.tint`), the pointer tag names it from Spaces (`PointerHover` kind
   `level`; no area for a level without rooms), and a click calls `onSelectLevel`, showing it
-  alone. Esc steps back out. What the site holds (garden, trees) names none. The live path
-  takes the hit node's level the same way, without the wash.
+  alone. Esc steps back out. What the site holds (garden, trees) names none.
 - **Rooms first.** Once a floor shows alone, until a room is selected, the drawing answers in rooms alone: hover opens a
   room, tints its floor and tags it, and no item lights up or turns the pointer into a hand. Inside the selected
-  room (`thingAt` in `Model.tsx`: a hit that is not faded), hover lights the item, door or window
-  and tags it; a click picks an item (`onSelectThing`) or opens a door or window.
+  room (`thingAt` in `Model.tsx`: a hit that is not faded), hover lights the thing and tags it;
+  a click picks it (`onSelectThing`) or, if it is openable (a door, a window, a cabinet), opens
+  it. What a hit lands on is Pascal's own viewer rule (`highlightAt` with `pascalHover`): the
+  nearest Pascal node above the hit, of any kind but the ones a click passes through (site,
+  building, level, zone, ceiling, scans, guides) and the room's walls and floor, which answer as
+  the room; a roof's part answers as the roof, and a node with a selection proxy as that node.
+  So a kitchen names each module (a dishwasher, a sink base, the wall cabinet above it), its
+  countertop the run, a microwave on a shelf itself, and a kind Pascal adds later hovers without
+  a change here. `pascalRules.ts` holds copies of the SDK's `resolveViewerHover` and
+  `nodeDisplayLabel`, not imports: `@pascal-app/viewer/ui` brings Pascal's whole runtime (about
+  2 MB of script), which the baked page never loads. Keep them in step with the SDK.
 - **Accent.** `syncAccent` in `Model.tsx` paints with `accentMaterial()` what is hovered inside the
   selected room, the items a contents row points at (`pointedThingIds`) and the picked item
-  (`selectedThingId`), and takes it off the rest (`highlightAt` in `semantics.ts` decides which
-  kinds). It is the only colour in the drawing; keep `--highlight` in `styles.css` in step.
+  (`selectedThingId`), and takes it off the rest (`highlightAt` in `semantics.ts` decides what
+  a hit lands on). It is the only colour in the drawing; keep `--highlight` in `styles.css` in step.
 - **Room cutaway.** Hovering a room opens it (`openRoom` in `Model.tsx`). `obstructions` in
   `semantics.ts` casts rays from points spread over the room's floor (at 5 cm and 1 m) towards the
   camera; every wall they cross on the room's level is cut, with the doors and windows set in
@@ -142,7 +151,7 @@ The read API contract, what the baked GLB contains, access, deployment and the s
   `roomTags.setSpots`, each at `labelPoint` (the outline's centroid, or the nearest point inside
   for an L or U), `TAG_HEIGHT` above its floor; the open room's tag is filled in the accent
   (`is-current`). `RoomTagProjector`, inside each canvas with a `locate` for that renderer (the
-  GLB's zone and its measured floor, or `sceneRegistry` with a floor measured on the live slabs), projects them every frame it draws and
+  GLB's zone and its measured floor), projects them every frame it draws and
   `RoomTags` in `ui/Marks.tsx` renders them as buttons: click opens the room, pointing previews
   it (`previewRoomId`). Hovering a tagged room in the drawing lights its tag instead of adding a
   pointer tag. No tags with every floor shown (the rooms are under the roof) or while measuring.
@@ -161,17 +170,39 @@ The read API contract, what the baked GLB contains, access, deployment and the s
   floor under it.
 - **Tags.** `PointerTag` in `ui/Marks.tsx`: a white chip above and right of the pointer (left
   near the right edge) with a square mark. Over a room it gives the room and its area (not for
-  the room already open); inside the open room, the thing (`thingName`: its label in the file,
-  its graph name, or its kind) with a filled accent mark. With every floor shown, it names the
+  the room already open); inside the open room, the thing (`thingName`: what Pascal's viewer
+  calls it, `pascalLabel`; else its label in the file, or its kind) with a filled accent mark. With every floor shown, it names the
   floor under the pointer with its area. Things and floors show a hand cursor; rooms keep the
   default.
 - **Loader.** `Loader` in `App.tsx`: Pascal's three bars outlined in ink, filling in turn, over a
   hairline that follows the download. It replaces the cover image.
-- **Live.** `LiveViewer` sets Pascal's own look instead of drawing it: `setShading('solid')`,
-  `setColorPreset('white')`, `setEdges('strong')`, `setInkOpacity`, `setWallMode('cutaway')`, a transparent background,
-  `renderQuality: 'low'` (no ambient occlusion), and no scene or library materials. `HideGround`
-  hides what the site draws itself. Pascal's runtime keeps its own lights, so live shading is close
-  to, not identical to, the baked drawing.
+- **Live.** An unbaked project draws exactly like a baked one, because it becomes one in the
+  browser. `LiveViewer` mounts Pascal's runtime under the loader (`.live-build`, invisible) the
+  way Pascal's bake page does: `daylight={false}`, `disablePostFx`, no scene or library
+  materials, levels stacked, walls up. Once it reports the scene ready and
+  `pendingSceneBuildCount()` has stayed at zero for a few frames, `captureLiveScene`
+  (`liveCapture.ts`) copies what it built following Pascal's capture protocol:
+  `thumbnail:before-capture` (`wholeWalls`) hands batched nodes their own meshes back, parts
+  marked `pascalExport: 'strip'`, off the scene layer (zone fills, overlays), hidden or drawn with
+  an invisible material (door and window hit boxes) are left out, lights and batches too, and
+  `thumbnail:after-capture` puts the runtime back. Each Pascal node becomes an object named by its
+  id with `pascalId`, `kind` and `label` in `userData`, as in a GLB; geometry is copied and
+  materials reduced to what `drawAsLines` reads; each part's plain `userData` comes along, since
+  Pascal's pose code reads its markers there (`pascalSwingLeaf`, `cabinetPose`,
+  `windowExteriorSign`). What opens then gets the clip a bake would carry, `<id>: open`, made by
+  Pascal's own code on the copy: a swing door's leaf turns to its marker's `openRotationY`, other
+  doors through `poseDoorMovingParts`, windows through `poseWindowMovingParts` (sampled from closed
+  to open, as Pascal's exporter samples a clone), and any other kind through its definition's
+  `exportAnimation` hook in `nodeRegistry` (cabinets, gates, procedural furniture; looping clips
+  are left out). The tracks name parts by uuid, as the SDK's do; `Model` points them at its own
+  clone. The runtime then unmounts and the copy goes to `Viewer` as `source` (`Model` takes a
+  GLB's bytes or a scene with its clips), where a click plays the clip as on a bake. A scripted
+  door (one with a `source`) brings its own clips, which the copy does not carry. Scripted items (`artifact://<sha256>` sources, such as a light
+  fitting) load through `configureArtifactStore`, from the project's
+  `/api/projects/<id>/artifacts/<sha256>` (a redirect to signed storage, already in the CSP);
+  without it they draw as placeholder boxes. That route is Pascal's app's, not the documented
+  read API, and its requests carry no viewer token: a private project's scripted items may stay
+  placeholders.
 
 ## The overlay
 
@@ -187,13 +218,16 @@ panels become sheets above the bar.
   `hotId` (the room or floor pointed at on the drawing, a tag or a row) gives its row the tint.
 - **Details** (`Inspector`) shows the selected room (area, the bounding size of its outline as
   "Size", or "Extents" when an L or U shape fills less of it, its ceiling height, Pascal's room
-  details when filled in, its contents) or the item picked in it (catalogue width, depth and
-  height times its scale, category, catalogue name). Identical items share a contents row with
+  details when filled in, its contents) or the thing picked in it (an item's catalogue width,
+  depth and height times its scale, category and catalogue name; furniture's own width, depth
+  and height, none for a run, whose modules make its length). Identical things share a contents row with
   a count; the list shows eight rows, then "Show all"; a row's arrow shows while pointed at, and
   pointing at a row lights its items in the drawing. The floor is named once, in the crumbs,
   which with the close button step back.
-- **Contents** are `roomContents`: items on the room's level whose position (or that of the item
-  they sit on) lies in its outline. Items hung on walls have no such position and are not listed.
+- **Contents** are `roomContents`: items and furniture on the room's level whose position lies
+  in its outline. A thing in or on another (a plate on a table, a microwave on a shelf, a module
+  in a run) is placed through its parent's position and turn (`levelPoint`). Items hung on walls
+  have no such position and are not listed.
 - **Measure** (`measure.ts`, `MeasureTool.tsx`): while it is on, the tool owns the pointer (the
   model's hover and clicks stand down). A click raycasts the shown scene and snaps to the hit
   face's nearest corner within 12 px; the overlay draws rings, the line and the distance from the

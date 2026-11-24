@@ -1370,6 +1370,14 @@ kbd {
   }
 }
 
+/* Pascal's runtime building an unbaked project, under the loader until it is captured. */
+.live-build {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .loading-overlay {
   position: absolute;
   inset: 0;

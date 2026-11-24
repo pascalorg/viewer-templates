@@ -2,6 +2,7 @@ import { type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   type AnimationAction,
+  type AnimationClip,
   AnimationMixer,
   type Box3,
   DoubleSide,
@@ -14,13 +15,13 @@ import {
   Quaternion,
   type Texture,
 } from 'three'
-import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { type SceneGraph, zoneArea } from '../pascal'
 import { GLAZING_LAYER, inkMaterials, OBJECT_LAYER, OWN_INK_LAYER } from './InkPass'
 import { createGltfLoader } from './loaders'
 import { FIT_MARGIN } from './AxoControls'
 import { measure } from './measure'
 import { RoomTagProjector } from './RoomTagProjector'
+import { FURNITURE_KINDS } from '../spaces'
 import { navigation } from './navigation'
 import {
   applyLevelVisibility,
@@ -85,15 +86,20 @@ export type FocusProps = {
   onSelectThing: (id: string | null) => void
 }
 
+/** What a drawing is made from: a baked file, or a scene captured from Pascal's runtime (`LiveScene`). */
+export type ModelSource = ArrayBuffer | { scene: Object3D; animations: AnimationClip[] }
+
+type Loaded = { scene: Object3D; animations: AnimationClip[] }
+
 type ModelProps = FocusProps & {
-  bytes: ArrayBuffer
+  source: ModelSource
   graph: SceneGraph
   onReady: (info: ModelInfo) => void
   onError: (error: unknown) => void
 }
 
 /** Kinds outlined as objects, lighter than structure. */
-const OBJECT_KINDS = new Set(['item', 'door', 'window'])
+const OBJECT_KINDS = new Set(['item', 'door', 'window', ...FURNITURE_KINDS])
 
 /** How long a room stays open after the pointer leaves it, so passing over a wall doesn't flicker. */
 const CLOSE_DELAY_MS = 350
@@ -101,7 +107,7 @@ const CLOSE_DELAY_MS = 350
 const TURN_EPSILON = 1e-4
 
 export function Model({
-  bytes,
+  source,
   graph,
   levelId,
   selectedRoomId,
@@ -118,15 +124,18 @@ export function Model({
   const gl = useThree((state) => state.gl)
   const camera = useThree((state) => state.camera)
   const invalidate = useThree((state) => state.invalidate)
-  const [gltf, setGltf] = useState<GLTF | null>(null)
+  const [gltf, setGltf] = useState<Loaded | null>(null)
 
   useEffect(() => {
     let cancelled = false
     const { loader, dispose } = createGltfLoader(gl)
-    // Parse a copy: the downloaded bytes outlive this effect (StrictMode runs it twice in
-    // development) and the loaders may hand buffers to workers.
-    loader
-      .parseAsync(bytes.slice(0), '')
+    // Work on a copy: the source outlives this effect (StrictMode runs it twice in development),
+    // the loaders may hand buffers to workers, and drawing changes the scene in place.
+    const loaded: Promise<Loaded> =
+      source instanceof ArrayBuffer
+        ? loader.parseAsync(source.slice(0), '')
+        : Promise.resolve(cloneLive(source))
+    loaded
       .then((result) => {
         if (cancelled) {
           disposeMaterials(new Set(materialsOf(result.scene)))
@@ -140,7 +149,7 @@ export function Model({
       cancelled = true
       dispose()
     }
-  }, [bytes, gl, onError])
+  }, [source, gl, onError])
 
   const index = useMemo(
     () => (gltf ? indexScene(gltf.scene, graph, gltf.animations) : null),
@@ -420,7 +429,7 @@ export function Model({
    * picked, the drawing answers in rooms alone.
    */
   const thingAt = (hit: Intersection | null) =>
-    hit && selected.current && !ghosts.current.has(hit.object as Mesh) ? highlightAt(hit) : null
+    hit && selected.current && !ghosts.current.has(hit.object as Mesh) ? highlightAt(hit, graph) : null
 
   // R3F calls these once per mesh under the pointer, all bubbling to this one object; each
   // handles a native event once. (Not stopPropagation: with every mesh sharing this object, it
@@ -766,4 +775,28 @@ function materialsOf(root: Object3D): Material[] {
     if (object instanceof Mesh) materials.push(...(Array.isArray(object.material) ? object.material : [object.material]))
   })
   return materials
+}
+
+/**
+ * A copy of a captured scene and its clips. The clips name their tracks by the parts' uuids (as
+ * Pascal's exporter does before writing a file), and a clone has new ones: point them at the copy.
+ */
+function cloneLive(source: { scene: Object3D; animations: AnimationClip[] }): Loaded {
+  const scene = source.scene.clone(true)
+  const uuids = new Map<string, string>()
+  const walk = (from: Object3D, to: Object3D) => {
+    uuids.set(from.uuid, to.uuid)
+    from.children.forEach((child, i) => walk(child, to.children[i]!))
+  }
+  walk(source.scene, scene)
+  const animations = source.animations.map((clip) => {
+    const copy = clip.clone()
+    for (const track of copy.tracks) {
+      const dot = track.name.indexOf('.')
+      const target = uuids.get(track.name.slice(0, dot))
+      if (target) track.name = target + track.name.slice(dot)
+    }
+    return copy
+  })
+  return { scene, animations }
 }

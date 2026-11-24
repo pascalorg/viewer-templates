@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { expect, type Page, test } from '@playwright/test'
+import type { SceneGraph } from '../src/pascal'
+import { readSpaces, roomContents, thingOf } from '../src/spaces'
 import { placeTags } from '../src/ui/tagLayout'
+import { pascalHover, pascalLabel } from '../src/viewer/pascalRules'
 import { cors, GLB_URL, mockPascal, sceneBody } from './pascal-mocks'
 
 const fixtures = new URL('./fixtures/', import.meta.url)
@@ -83,6 +86,21 @@ async function findPointer(page: Page, step = 0.03) {
       const point = { x: box.x + box.width * x, y: box.y + box.height * y }
       await page.mouse.move(point.x, point.y)
       if ((await canvas.evaluate((element) => element.style.cursor)) === 'pointer') return point
+    }
+  }
+  return null
+}
+
+/** Scans the drawing for a spot where the pointer tag names `name`. */
+async function findNamed(page: Page, name: string, step = 0.02) {
+  const canvas = page.locator('canvas')
+  const tag = page.locator('.pointer-tag')
+  const box = (await canvas.boundingBox())!
+  for (let y = 0.95; y >= 0.2; y -= step) {
+    for (let x = 0.15; x <= 0.85; x += step) {
+      const point = { x: box.x + box.width * x, y: box.y + box.height * y }
+      await page.mouse.move(point.x, point.y)
+      if ((await tag.count()) && (await tag.innerText()).trim() === name) return point
     }
   }
   return null
@@ -332,6 +350,66 @@ test('places room tags without overlap: larger rooms first, the rest as pins or 
   expect(pinned.get('d')).toBe('pin')
 })
 
+test('lists furniture with items: cabinet runs, their modules, shelves and what stands on them', () => {
+  const node = (id: string, type: string, parentId: string | null, fields: Record<string, unknown> = {}) => ({
+    id, type, parentId, name: id, ...fields,
+  })
+  const nodes = [
+    node('level', 'level', null, { level: 0 }),
+    node('Kitchen', 'zone', 'level', { polygon: [[0, 0], [4, 0], [4, 4], [0, 4]] }),
+    // A run turned a quarter: its modules' offsets turn with it.
+    node('Run', 'cabinet', 'level', { position: [3.5, 0, 1], rotation: Math.PI / 2, width: 0.6, depth: 0.58 }),
+    node('Sink base', 'cabinet-module', 'Run', { position: [0, 0.1, -2], rotation: 0, width: 0.9, depth: 0.58, carcassHeight: 0.72 }),
+    node('Wall cabinet', 'cabinet-module', 'Sink base', { position: [0, 1.35, -0.13], rotation: 0, width: 0.9, depth: 0.32, carcassHeight: 0.72 }),
+    // Unturned, this one would stand inside; turned, it stands at z = -1, outside.
+    node('Fridge', 'cabinet-module', 'Run', { position: [2, 0.1, 0], rotation: 0, width: 0.76, depth: 0.58, carcassHeight: 2.07 }),
+    node('Shelf', 'shelf', 'level', { position: [1, 0, 3], rotation: [0, 0, 0], width: 1.3, depth: 0.6, height: 0.84 }),
+    node('Microwave', 'item', 'Shelf', { position: [0.2, 0.9, 0], rotation: [0, 0, 0], asset: { dimensions: [0.5, 0.3, 0.4] } }),
+  ]
+  const graph = {
+    nodes: Object.fromEntries(nodes.map((each) => [each.id, each])),
+    rootNodeIds: ['level'],
+  } as unknown as SceneGraph
+  const room = readSpaces(graph).rooms.get('Kitchen')!
+  expect(roomContents(graph, room).map((thing) => thing.name)).toEqual(['Microwave', 'Run', 'Shelf', 'Sink base', 'Wall cabinet'])
+  expect(thingOf(graph, 'Sink base')).toMatchObject({ category: 'Cabinet module', size: [0.9, 0.58, 0.72] })
+  // A run's own width is a stub; its modules make its length.
+  expect(thingOf(graph, 'Run')).toMatchObject({ category: 'Cabinet run', size: null })
+  expect(thingOf(graph, 'Shelf')).toMatchObject({ category: 'Shelf', size: [1.3, 0.6, 0.84] })
+})
+
+test("hovers and names things by Pascal's viewer rules", () => {
+  const node = (id: string, type: string, parentId: string | null, fields: Record<string, unknown> = {}) => ({
+    id, type, parentId, ...fields,
+  })
+  const nodes = [
+    node('level', 'level', null),
+    node('zone', 'zone', 'level', { name: 'Kitchen' }),
+    node('wall', 'wall', 'level'),
+    node('ceiling', 'ceiling', 'level'),
+    node('roof', 'roof', 'level'),
+    node('segment', 'roof-segment', 'roof'),
+    node('run', 'cabinet', 'level', { name: 'Kitchen Island' }),
+    node('module', 'cabinet-module', 'run'),
+    node('lamp', 'item', 'level', { asset: { name: 'Arc Lamp' } }),
+    node('handle', 'item', 'run', { metadata: { nodeSelectionProxyId: 'run' } }),
+    node('column', 'column', 'level'),
+  ]
+  const graph = {
+    nodes: Object.fromEntries(nodes.map((each) => [each.id, each])),
+    rootNodeIds: ['level'],
+  } as unknown as SceneGraph
+  // Kinds the pointer passes through answer nothing; a roof's part answers as the roof.
+  expect(['level', 'zone', 'ceiling'].map((id) => pascalHover(graph, id))).toEqual([null, null, null])
+  expect(pascalHover(graph, 'segment')).toBe('roof')
+  // Any other kind answers as itself, or as the node it hands its selection to.
+  expect(['wall', 'module', 'column', 'handle'].map((id) => pascalHover(graph, id))).toEqual(['wall', 'module', 'column', 'run'])
+  // Names: its own, an item's catalogue name, or a word for its kind.
+  expect(['run', 'module', 'lamp', 'column', 'segment'].map((id) => pascalLabel(graph, id))).toEqual([
+    'Kitchen Island', 'Cabinet', 'Arc Lamp', 'Column', 'roof-segment',
+  ])
+})
+
 test('answers in floors with every floor shown: hover names one, a click shows it alone', async ({ page }) => {
   await mockPascal(page)
   await page.goto('/?project=fixture-house')
@@ -514,12 +592,39 @@ for (const status of ['none', 'failed', 'baking', 'ready']) {
     await page.goto('/?project=fixture-house')
     await expect(page.locator('main[data-source="live"][data-scene-ready="true"]')).toBeVisible({ timeout: 20_000 })
     await expect(page.getByRole('heading', { name: 'Fixture house' })).toBeVisible()
+    // Captured and drawn like a bake: the runtime's own canvas is gone, the drawing's is up.
+    await expect(page.locator('.live-build')).toHaveCount(0)
+    await expect(page.locator('canvas')).toHaveCount(1)
     await expect(page.locator('canvas')).toBeVisible()
     expect(await canvasColours(page)).toBeGreaterThan(50)
     expect(calls.glb).toBe(0)
     expect(errors).toEqual([])
   })
 }
+
+test('opens a door on the live path with the clip Pascal would bake', async ({ page }) => {
+  await mockPascal(page, () => ({
+    body: sceneBody({ graph: liveGraph, bake: { status: 'none', bakeVersion: null, hash: null, lods: [] } }),
+  }))
+  await mockLiveAssets(page)
+  await page.goto('/?project=fixture-house')
+  await expect(page.locator('main[data-source="live"][data-scene-ready="true"]')).toBeVisible({ timeout: 20_000 })
+  await page.waitForTimeout(600)
+  await openRoom(page, 'Live room')
+  // Named as Pascal's viewer names an unnamed door.
+  const door = await findNamed(page, 'Door')
+  expect(door).not.toBeNull()
+
+  const canvas = page.locator('canvas')
+  const closed = await canvas.screenshot()
+  await page.mouse.click(door!.x, door!.y)
+  await page.waitForTimeout(1300)
+  const opened = await canvas.screenshot()
+  expect(opened.equals(closed)).toBe(false)
+  await page.mouse.click(door!.x, door!.y)
+  await page.waitForTimeout(1300)
+  expect((await canvas.screenshot()).equals(opened)).toBe(false)
+})
 
 test('polls while showing live, then switches to the ready bake', async ({ page }) => {
   test.setTimeout(60_000)

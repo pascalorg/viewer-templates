@@ -48,9 +48,9 @@ void main() {
  *   flat surface has no second derivative at any angle and only real steps draw. Structure's
  *   draw on both sides of the step (heaviest); an object's or a leaf's on its own side only.
  * - object outlines (furniture, doors, windows): their tag in the normal pass, `objectInk`.
- * - creases, where neighbouring normals turn by more than ~30° without a step: one pixel, on
- *   one side, at `creaseInk`, fading as the drawing zooms out (`creaseFade`), so fine repeating
- *   lines (slats, planks) don't shimmer.
+ * - creases, where neighbouring normals turn by more than ~30° without a step, at `creaseInk`:
+ *   two pixels on structure, one (on one side) on objects, fading as the drawing zooms out
+ *   (`creaseFade`), so fine repeating lines (slats, planks) don't shimmer.
  * Leaves draw their silhouette only: a step between two leaves draws nothing.
  */
 const fragmentShader = /* glsl */ `
@@ -131,8 +131,10 @@ void main() {
   float far = farSide * (isStructure(tn) || isGhost(tn) ? weightOf(tn) : 0.0);
   float silhouette = max(near, far);
 
-  // Creases: towards the right and up only, so each draws one pixel wide.
+  // Creases: on structure towards every side, two pixels wide like its silhouettes; on objects
+  // towards the right and up only, one pixel, so dense furniture doesn't clump.
   float bend = max(turn(nc, nr), turn(nc, nu));
+  if (isStructure(nc.a)) bend = max(bend, max(turn(nc, nl), turn(nc, nd)));
   float creaseEdge = smoothstep(normalThreshold, normalThreshold * 1.6, bend);
   float creaseWeight = isLeaf(nc.a) ? 0.0 : isStructure(nc.a) ? creaseInk : weightOf(nc.a) * creaseInk;
   float crease = creaseEdge * creaseWeight * creaseFade;

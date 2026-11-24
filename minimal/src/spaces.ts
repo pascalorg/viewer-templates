@@ -162,11 +162,40 @@ export function readSpaces(graph: SceneGraph): Spaces {
   return { floors, rooms, area }
 }
 
-/** What an item's graph node says about it. */
+/**
+ * Furniture Pascal builds from its parameters rather than a catalogue model: a kitchen or
+ * cabinet run (its countertop and plinth), the modules in it (a sink base, a dishwasher, a wall
+ * cabinet on a base one), shelves, and procedural pieces. With `item`, these are the kinds
+ * Pascal's node definitions file under the `furnish` category. A room lists them with its items.
+ */
+export const FURNITURE_KINDS = new Set(['cabinet', 'cabinet-module', 'shelf', 'procedural-item'])
+
+/** What furniture is, in words, by kind. */
+const FURNITURE_CATEGORY: Record<string, string> = {
+  cabinet: 'Cabinet run',
+  'cabinet-module': 'Cabinet module',
+  shelf: 'Shelf',
+  'procedural-item': 'Furniture',
+}
+
+/** What an item's or a piece of furniture's graph node says about it. */
 export function thingOf(graph: SceneGraph, id: string): Thing | null {
   const node = getNode(graph, id)
   if (!node) return null
   const fields = node as Record<string, unknown>
+  if (FURNITURE_KINDS.has(node.type)) {
+    const width = number(fields.width)
+    const depth = number(fields.depth)
+    const height = number(fields.carcassHeight) ?? number(fields.height)
+    return {
+      id,
+      name: text(node.name) || sentence(node.type),
+      category: FURNITURE_CATEGORY[node.type] ?? null,
+      // A run's own width is a stub: its modules make its length.
+      size: node.type !== 'cabinet' && width !== null && depth !== null && height !== null ? [width, depth, height] : null,
+      model: null,
+    }
+  }
   const asset = (fields.asset ?? {}) as Record<string, unknown>
   const dimensions = vector(asset.dimensions)
   const scale = vector(fields.scale) ?? [1, 1, 1]
@@ -184,26 +213,43 @@ export function thingOf(graph: SceneGraph, id: string): Thing | null {
   }
 }
 
+/** Where a node sits in its parent's plane, and its turn about the vertical (radians). */
+function placement(node: SceneNode): { x: number; z: number; turn: number } | null {
+  const fields = node as Record<string, unknown>
+  const position = vector(fields.position)
+  if (!position) return null
+  const rotation = fields.rotation
+  const turn = typeof rotation === 'number' ? rotation : Array.isArray(rotation) ? (number(rotation[1]) ?? 0) : 0
+  return { x: position[0], z: position[2], turn }
+}
+
 /**
- * Where an item stands in its level's plane: its own position, or that of the item it sits on.
+ * Where a thing stands in its level's plane: its own position, or its position on the item or
+ * furniture it sits in or on (a plate on a table, a microwave on a shelf, a module in a run).
  * Items hung on a wall are placed along the wall, so they have none here.
  */
 function levelPoint(graph: SceneGraph, node: SceneNode): [number, number] | null {
-  const position = vector((node as Record<string, unknown>).position)
+  const own = placement(node)
   const parent = node.parentId ? getNode(graph, node.parentId) : undefined
-  if (!parent || parent.type === 'level') return position ? [position[0], position[2]] : null
-  if (parent.type === 'item') return levelPoint(graph, parent)
-  if (parent.type === 'ceiling' || parent.type === 'slab' || parent.type === 'zone') {
-    return position ? [position[0], position[2]] : null
+  if (!own) return null
+  if (!parent || parent.type === 'level' || parent.type === 'ceiling' || parent.type === 'slab' || parent.type === 'zone') {
+    return [own.x, own.z]
   }
-  return null
+  if (parent.type !== 'item' && !FURNITURE_KINDS.has(parent.type)) return null
+  const base = levelPoint(graph, parent)
+  const frame = placement(parent)
+  if (!base || !frame) return null
+  // The parent's turn about the vertical, as three.js applies it.
+  const cos = Math.cos(frame.turn)
+  const sin = Math.sin(frame.turn)
+  return [base[0] + own.x * cos + own.z * sin, base[1] - own.x * sin + own.z * cos]
 }
 
-/** The items whose footprint centre lies on a room's floor, by name. */
+/** The items and furniture whose footprint centre lies on a room's floor, by name. */
 export function roomContents(graph: SceneGraph, room: Room): Thing[] {
   const things: Thing[] = []
   for (const node of Object.values(graph.nodes)) {
-    if (node.type !== 'item') continue
+    if (node.type !== 'item' && !FURNITURE_KINDS.has(node.type)) continue
     if (findAncestorOfType(graph, node.id, 'level')?.id !== room.levelId) continue
     const point = levelPoint(graph, node)
     if (!point || !zoneContains(room.zone, point[0], point[1])) continue

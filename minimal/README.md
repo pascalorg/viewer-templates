@@ -38,7 +38,7 @@ picked on the right, and one bar of controls at the bottom.
 | A floor shown alone | Every room on it carries a tag with its name and area, pinned 90 cm above the middle of its floor. Tags never overlap: the open room's and the larger rooms' place first, nudged a tag up or down if they must; a room under 3 m² shows a dot until you zoom in, as does a room with no clear spot, or nothing where even that would crowd, and its tag opens out when you point at the dot or the room. Tags carry no mark at rest and keep off the panels; with a room open, the others dim. Click a tag to open the room; point at it to see into it. With a room open, its tag turns blue and the other rooms keep theirs, so you can move to one. |
 | Hover a room | See into it: its floor takes the pale blue tint, edged in a thin cobalt line, and the walls between it and you are cut 30 cm above its floor, with a grey section fill. Its tag gets a cobalt border and mark, and its row in Spaces takes the same tint. Until a room is open, the drawing answers in rooms alone. |
 | Click a room | Open it: the view frames it beside its details, its floor shows alone, everything else loses its shading and keeps light lines (walls and slabs it shares with other rooms fade past its outline) and whatever stands in front of it (a tree, a cabinet) is hidden. Its details list its area, size (extents for an L-shaped room), ceiling height, what Pascal records about it, and its contents, eight at first; pointing at a row lights the item. |
-| Inside an open room | Hovering an item, door or window lights it in the accent with its name; click an item (here or in the contents list) for its size and category; click a door or window to open or close it. |
+| Inside an open room | Hovering anything in it lights it in the accent with its name, by the rules Pascal's own viewer uses: an item, a piece of furniture (a kitchen module, a cabinet run, a shelf), a door, a window, a column or a stair; the room's walls and floor answer as the room. Click one (or a row of the contents list) for its size and category; click a door, a window or a cabinet to open or close it. |
 | **Measure**, or M | Click two points on the drawing for the distance between them; points snap to the nearest corner. |
 | Esc | Step back one level: the tool, the item, the room, the spaces panel, the floor. |
 | ? | The shortcut sheet. |
@@ -55,9 +55,10 @@ creases inside a surface lightest (and lighter still zoomed out). Trees and shru
 silhouette only. The lines render at twice the screen's resolution on 1x monitors and are
 smoothed by FXAA, so sloping lines (roof hips, diagonals) draw clean on any screen. The site recedes: its
 edge and Pascal's property line are a light hairline. Leaves keep their texture's alpha, so each leaf keeps its outline; where lines crowd, as in
-foliage, the ink fades to a grey hatch. Unbaked projects rebuild live with Pascal's runtime in its
-own monochrome look: the "white" colour preset, its ink edges, its wall cutaway and no scene
-materials.
+foliage, the ink fades to a grey hatch. An unbaked project is built by Pascal's runtime on a
+hidden canvas, the way Pascal's own bake page does, then copied and drawn exactly like a baked
+one. Doors, windows and cabinets open there too: Pascal's own pose code makes the same open
+animations a bake carries.
 
 While a project loads, the page shows Pascal's mark, three stepped bars, drawn in the same ink.
 

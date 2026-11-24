@@ -26,7 +26,7 @@ export const STYLE = {
   background: '#f6f6f3',
   /** The ink. */
   line: '#26282d',
-  lineOpacity: 0.9,
+  lineOpacity: 1,
   /** How much ink fades where lines crowd together (foliage, fine clutter): 0 keeps it all. */
   busyFade: 0.75,
   /** What hover lights up. */
@@ -51,15 +51,15 @@ export const STYLE = {
   /** The ink's opacity on faded things, relative to `lineOpacity`: enough to keep the house. */
   ghostInk: 0.38,
   /** Line weights, relative to `lineOpacity`: silhouettes and cuts are 1. Objects' outlines (furniture, doors, windows). */
-  objectInk: 0.7,
+  objectInk: 0.9,
   /** Leaves: their silhouette only. */
   leafInk: 0.55,
   /** Creases inside a surface (a wall's corner, a step), the lightest. */
-  creaseInk: 0.6,
+  creaseInk: 0.9,
   /** The lines render at least at this many pixels to the CSS pixel, so a 1x screen draws them as a 2x one does. */
   inkResolution: 2,
   /** Zoomed out, creases fade to this share, so fine repeating lines (slats, planks) don't shimmer… */
-  creaseFar: 0.35,
+  creaseFar: 0.55,
   /** …between these zooms, in screen pixels to the metre: full at the first, `creaseFar` at the second. */
   creaseFadeZoom: [70, 25] as const,
   /** The ink's opacity on the site (the parcel's edge, the ground), relative to `lineOpacity`. */
@@ -101,6 +101,10 @@ export function roleOfKind(kind: string | undefined): SurfaceRole {
     case 'window':
       return 'joinery'
     case 'item':
+    case 'cabinet':
+    case 'cabinet-module':
+    case 'shelf':
+    case 'procedural-item':
       return 'furnishing'
     case 'site':
       return 'ground'
