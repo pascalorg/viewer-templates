@@ -24,7 +24,7 @@ read it before changing how projects are read.
 | `src/runtime/bootstrap.ts` | `prepareSceneRuntime`: built-in nodes, viewer config (assets, sounds, icons, local decoders), read-only lease, library materials, artifact store, plugins. |
 | `src/runtime/plugins.ts` | The plugin allowlist, install-state rules and the unknown-kind warning. |
 | `src/runtime/plugin-loader.ts` | Loads plugins once each, with a deadline and a late-arrival callback. |
-| `src/runtime/materials.ts`, `artifacts.ts` | Library material registration; the read-only artifact store (private reads prefetch into blob URLs). |
+| `src/runtime/materials.ts`, `artifacts.ts` | Library material registration; the read-only artifact store (private reads prefetch into blob URLs, waiting out a `429` for the `Retry-After` Pascal gives). |
 | `src/runtime/project-scene.ts` | Connects `useProjectScene` to `prepareSceneRuntime`. |
 | `src/runtime/trees-render.d.ts` | Type-only stand-in for the trees render entry (mapped in `tsconfig.json` `paths`). |
 | `src/pascal/` | The API client and Open from Pascal helpers, shared with `listing`. No React, no three.js. |

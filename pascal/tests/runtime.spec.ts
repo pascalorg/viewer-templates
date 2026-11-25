@@ -129,6 +129,44 @@ test('artifact routes omit cookies, prefetch private bytes once and strip bearer
   expect(storageReads).toEqual([{ authorization: undefined, cookie: undefined }, { authorization: undefined, cookie: undefined }])
 })
 
+test('a rate-limited private artifact waits the time Pascal gives and is read again', async ({ page }) => {
+  const reads: Record<string, number> = {}
+  await page.route('https://editor.pascal.app/api/projects/busy/artifacts/*', async (route) => {
+    const cors = { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'Retry-After' }
+    if (route.request().method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': 'authorization', 'access-control-allow-methods': 'GET' } })
+      return
+    }
+    const hash = route.request().url().split('/').pop()!
+    reads[hash] = (reads[hash] ?? 0) + 1
+    // The first file is late once; the second is refused for good.
+    if (hash.startsWith('a') ? reads[hash] === 1 : true) await route.fulfill({ status: 429, headers: { ...cors, 'retry-after': '1' }, body: '{"error":"rate_limited"}' })
+    else await route.fulfill({ status: 200, headers: cors, body: 'late bytes' })
+  })
+  await page.goto('/tests/runtime.html')
+  await page.waitForFunction(() => !!window.runtimeTest)
+  const result = await page.evaluate(async () => {
+    const { createProjectArtifactStore } = window.runtimeTest
+    const options = { baseUrl: 'https://editor.pascal.app', projectId: 'busy', token: 'pvh_fixture' }
+    const late = 'a'.repeat(64)
+    const started = performance.now()
+    const store = await createProjectArtifactStore({ ...options, graph: { src: `artifact://${late}` } })
+    const waited = performance.now() - started
+    const bytes = await (await fetch(store.store.url(late)!)).text()
+    store.dispose()
+    let refused: unknown = null
+    try { await createProjectArtifactStore({ ...options, graph: { src: `artifact://${'b'.repeat(64)}` } }) }
+    catch (error) { refused = (error as { status?: number }).status }
+    return { bytes, waited, refused }
+  })
+  expect(result.bytes).toBe('late bytes')
+  expect(result.waited).toBeGreaterThanOrEqual(1000)
+  expect(reads['a'.repeat(64)]).toBe(2)
+  // Three more tries, then the refusal is the answer.
+  expect(reads['b'.repeat(64)]).toBe(4)
+  expect(result.refused).toBe(429)
+})
+
 test('failed and aborted artifact setup releases its read-only lease', async ({ page }) => {
   await page.route('https://editor.pascal.app/api/projects/rejected/artifacts/*', (route) => route.fulfill({ status: 401, headers: { 'access-control-allow-origin': '*' }, body: '{}' }))
   await page.goto('/tests/runtime.html')
