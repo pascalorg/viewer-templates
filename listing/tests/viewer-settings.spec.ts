@@ -85,6 +85,9 @@ function expectNear(actual: number[], expected: number[]) {
 
 /** Drags the view round, then waits for the controls' damping to come to rest. */
 async function orbit(page: Page, camera: () => Promise<number[]>) {
+  // The drag's damping ends after a number of frames, not a time: about a hundred, which a CI
+  // runner drawing in software takes well over the default five seconds to render.
+  test.slow()
   const box = (await page.locator('canvas').boundingBox())!
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5)
   await page.mouse.down()
@@ -96,7 +99,7 @@ async function orbit(page: Page, camera: () => Promise<number[]>) {
     const still = last.length > 0 && Math.hypot(...pose.map((value, axis) => value - last[axis]!)) < 1e-4
     last = pose
     return still
-  }, { intervals: [250] }).toBe(true)
+  }, { intervals: [250], timeout: 25_000 }).toBe(true)
 }
 
 test('Customize starts the handoff with scope=configure and keeps it in the return path', async ({ page }) => {
