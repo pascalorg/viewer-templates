@@ -56,9 +56,9 @@ jobs:
         env:
           VIEWER_ID: viewer_dryrun
 
-  # Pascal's own Showcase, Listing and Minimal viewers (showcase., listing. and minimal.pascal-viewer.app) follow main.
+  # Pascal's own Showcase, Listing, Minimal and Immersive viewers (showcase., listing., minimal. and immersive.pascal-viewer.app) follow main.
   # Needs the secret PASCAL_API_KEY (an API key of Pascal's workspace) and the variables
-  # SHOWCASE_VIEWER_ID, LISTING_VIEWER_ID and MINIMAL_VIEWER_ID; a template without its variable is skipped.
+  # SHOWCASE_VIEWER_ID, LISTING_VIEWER_ID, MINIMAL_VIEWER_ID and IMMERSIVE_VIEWER_ID; a template without its variable is skipped.
   deploy:
     name: deploy ${{ matrix.template }}
     needs: [template, shared-client]
@@ -77,6 +77,8 @@ jobs:
             viewer: LISTING_VIEWER_ID
           - template: minimal
             viewer: MINIMAL_VIEWER_ID
+          - template: immersive
+            viewer: IMMERSIVE_VIEWER_ID
     env:
       VIEWER_ID: ${{ vars[matrix.viewer] }}
     defaults:

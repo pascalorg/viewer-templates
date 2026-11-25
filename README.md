@@ -30,7 +30,7 @@ Or deploy a copy straight away:
 
 Or host the build on Pascal at `https://<slug>.pascal-viewer.app`: see [Deploy to Pascal](listing/README.md#deploy-to-pascal).
 
-Pascal runs `showcase`, `listing` and `minimal` itself as official viewers that any project owner can pick in Pascal, without deploying anything: every merge to `main` deploys them to `showcase.pascal-viewer.app`, `listing.pascal-viewer.app` and `minimal.pascal-viewer.app`.
+Pascal runs `showcase`, `listing`, `minimal` and `immersive` itself as official viewers that any project owner can pick in Pascal, without deploying anything: every merge to `main` deploys them to `showcase.pascal-viewer.app`, `listing.pascal-viewer.app`, `minimal.pascal-viewer.app` and `immersive.pascal-viewer.app`.
 
 Each template's `AGENTS.md` explains the read, what the 3D file contains and how to customise it, for you and for your coding agent.
 
