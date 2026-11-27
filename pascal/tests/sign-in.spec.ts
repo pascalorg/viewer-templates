@@ -277,3 +277,70 @@ test('sign-in preserves an anonymous Pascal entry as the current return page', a
   await expect(page.locator('main[data-scene-ready="true"]')).toBeVisible({ timeout: 60_000 })
   expect(page.url()).toBe(new URL(path, baseURL).href)
 })
+
+// A reader's session Pascal rejects before its expiry (revoked, binding changed, parent session
+// ended): a public project shows its public view without asking Pascal for a session it refuses;
+// a private one gets one fresh round trip, and a replacement rejected too does not loop.
+async function rejectingScenes(page: Page, publicProject: boolean) {
+  await mockPascal(page)
+  const auth: string[] = []
+  await page.route('**/api/projects/*/scene*', (route) => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    const bearer = route.request().headers().authorization ?? ''
+    auth.push(bearer)
+    if (bearer) return route.fulfill({ status: 401, json: errorBody('unauthorized'), headers: cors })
+    if (!publicProject) return route.fulfill({ status: 404, json: errorBody('not_found'), headers: cors })
+    return route.fulfill({ json: sceneBody(), headers: cors })
+  })
+  return auth
+}
+
+async function authorizeRequests(page: Page) {
+  const requests: URLSearchParams[] = []
+  await page.route('**/viewer/authorize?*', (route) => {
+    requests.push(new URL(route.request().url()).searchParams)
+    return route.fulfill({ contentType: 'text/html', body: '<p>Pascal authorize</p>' })
+  })
+  return requests
+}
+
+async function seedSession(page: Page) {
+  await page.addInitScript(({ issuer, project, viewer, token }) => {
+    if (sessionStorage.getItem('fixture:seeded')) return
+    sessionStorage.setItem('fixture:seeded', '1')
+    sessionStorage.setItem(`pascal:credential:${JSON.stringify([issuer, viewer, project, location.origin])}`,
+      JSON.stringify({ issuer, project_id: project, viewer_id: viewer, origin: location.origin, access: 'session',
+        access_token: token, expires_at: new Date(Date.now() + 1_800_000).toISOString(), renewalAttempted: false }))
+  }, { issuer, project, viewer, token })
+}
+
+test('a rejected reader session on a public project shows its public view on the anonymous address', async ({ page, baseURL }) => {
+  const auth = await rejectingScenes(page, true)
+  await registry(page)
+  const requests = await authorizeRequests(page)
+  await seedSession(page)
+  await page.goto(`/?project=${project}&viewer=${viewer}&access=session&embed=1`)
+  await expect(page.locator('main[data-scene-ready="true"]')).toBeVisible({ timeout: 60_000 })
+  expect(page.url()).toBe(new URL(`/?project=${project}&embed=1`, baseURL).href)
+  expect(requests).toHaveLength(0)
+  expect(auth[0]).toBe(`Bearer ${token}`)
+  expect(auth.slice(1).every((value) => value === '')).toBe(true)
+})
+
+test('a rejected reader session on a private project reopens once, and a rejected replacement does not loop', async ({ page }) => {
+  const auth = await rejectingScenes(page, false)
+  await registry(page)
+  const requests = await authorizeRequests(page)
+  await exchanges(page)
+  await seedSession(page)
+  await page.goto(`/?project=${project}&viewer=${viewer}&access=session`)
+  await page.waitForURL(`${issuer}/viewer/authorize?*`)
+  expect(requests).toHaveLength(1)
+  expect(requests[0]!.get('access')).toBe('session')
+  expect(requests[0]!.get('interaction')).toBe('sign_in')
+  expect(requests[0]!.has('scope')).toBe(false)
+  await page.goto(`/?code=${code}&state=${requests[0]!.get('state')}&iss=${encodeURIComponent(issuer)}`)
+  await expect(page.getByRole('heading', { name: 'Reopen from Pascal' })).toBeVisible()
+  expect(requests).toHaveLength(1)
+  expect(auth.filter((value) => value === `Bearer ${token}`)).toHaveLength(2)
+})

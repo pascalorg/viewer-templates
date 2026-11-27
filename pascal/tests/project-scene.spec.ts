@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
 import { cors, glb, ISSUER, liveScene, mockPascal, PROJECT, sceneBody, seedCredential, TOKEN, VIEWER } from './pascal-mocks'
 
 for (const status of ['none', 'failed', 'baking', 'ready'] as const) {
@@ -68,31 +68,56 @@ for (const code of ['not_found', 'not_published']) {
   })
 }
 
-for (const access of ['session', 'share'] as const) {
-  test(`a rejected ${access} credential requires reopening with no anonymous fallback`, async ({ page }) => {
-    const calls = await mockPascal(page, () => ({ status: 401, body: { error: 'unauthorized' } }))
-    await seedCredential(page, access)
-    await page.goto(`/?project=${PROJECT}`)
-    await expect(page.getByRole('heading', { name: access === 'share' ? 'Reopen your share link' : 'Reopen from Pascal' })).toBeVisible()
-    expect(calls.scene).toBe(1)
-    expect(calls.authorization).toEqual([`Bearer ${TOKEN}`])
-    expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('pascal:credential:')))).toEqual([])
-    await expect(page.getByRole('link', { name: 'Open project in Pascal' })).toHaveAttribute('href', `${ISSUER}/editor/${PROJECT}`)
-    await page.reload()
-    await expect(page.locator(`main[data-state="${access === 'share' ? 'reopen' : 'needs-access'}"]`)).toBeVisible()
-    expect(calls.scene).toBe(access === 'share' ? 1 : 2)
+test('a rejected share credential requires reopening with no anonymous fallback', async ({ page }) => {
+  const calls = await mockPascal(page, () => ({ status: 401, body: { error: 'unauthorized' } }))
+  await seedCredential(page, 'share')
+  await page.goto(`/?project=${PROJECT}`)
+  await expect(page.getByRole('heading', { name: 'Reopen your share link' })).toBeVisible()
+  expect(calls.scene).toBe(1)
+  expect(calls.authorization).toEqual([`Bearer ${TOKEN}`])
+  expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('pascal:credential:')))).toEqual([])
+  await expect(page.getByRole('link', { name: 'Open project in Pascal' })).toHaveAttribute('href', `${ISSUER}/editor/${PROJECT}`)
+  await page.reload()
+  await expect(page.locator('main[data-state="reopen"]')).toBeVisible()
+  expect(calls.scene).toBe(1)
+})
+
+/** Pascal's authorize page: the page leaves for it once, in session mode, never sending the rejected token. */
+async function expectOneSessionRoundTrip(page: Page) {
+  const requests: URLSearchParams[] = []
+  await page.route('**/viewer/authorize?*', (route) => {
+    requests.push(new URL(route.request().url()).searchParams)
+    return route.fulfill({ contentType: 'text/html', body: '<p>Pascal authorize</p>' })
   })
+  return async () => {
+    await page.waitForURL(`${ISSUER}/viewer/authorize?*`)
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.get('access')).toBe('session')
+    expect(requests[0]!.get('interaction')).toBe('sign_in')
+    expect(page.url()).not.toContain(TOKEN)
+  }
 }
+
+test('a session credential rejected before its expiry on a private project reopens once through Pascal', async ({ page }) => {
+  const calls = await mockPascal(page, () => ({ status: 401, body: { error: 'unauthorized' } }))
+  await seedCredential(page, 'session')
+  const roundTrip = await expectOneSessionRoundTrip(page)
+  await page.goto(`/?project=${PROJECT}`)
+  await roundTrip()
+  // The credentialed read, then the tokenless one that says the project is not public.
+  expect(calls.authorization).toEqual([`Bearer ${TOKEN}`, undefined])
+})
 
 test('routes a 401 during signed URL renewal through the handoff', async ({ page }) => {
   const calls = await mockPascal(page, (n) => n === 1 ? { body: sceneBody() }
     : { status: 401, body: { error: 'unauthorized' } }, () => 400)
   await seedCredential(page)
+  const roundTrip = await expectOneSessionRoundTrip(page)
   await page.goto(`/?project=${PROJECT}`)
-  await expect(page.getByRole('heading', { name: 'Reopen from Pascal' })).toBeVisible()
-  expect(calls.scene).toBe(2)
+  await roundTrip()
+  expect(calls.scene).toBe(3)
   expect(calls.glb).toBe(1)
-  expect(calls.authorization).toEqual([`Bearer ${TOKEN}`, `Bearer ${TOKEN}`])
+  expect(calls.authorization).toEqual([`Bearer ${TOKEN}`, `Bearer ${TOKEN}`, undefined])
 })
 
 test('App prepares private artifacts with the scene credential and routes a rejection through access', async ({ page }) => {
@@ -100,8 +125,10 @@ test('App prepares private artifacts with the scene credential and routes a reje
   scene.graph = structuredClone(scene.graph)
   const hash = 'a'.repeat(64)
   scene.graph.nodes.wall_south!.compiledArtifact = `artifact://${hash}`
-  const calls = await mockPascal(page, () => ({ body: scene }))
+  // Credentialed, the scene reads; without a credential it does not: a private project.
+  const calls = await mockPascal(page, (n) => n === 1 ? { body: scene } : { status: 404, body: { error: 'not_found' } })
   await seedCredential(page)
+  const roundTrip = await expectOneSessionRoundTrip(page)
   const artifactReads: (string | undefined)[] = []
   await page.route(`${ISSUER}/api/projects/${PROJECT}/artifacts/${hash}`, (route) => {
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
@@ -109,10 +136,9 @@ test('App prepares private artifacts with the scene credential and routes a reje
     return route.fulfill({ status: 401, headers: cors, json: { error: 'unauthorized' } })
   })
   await page.goto(`/?project=${PROJECT}`)
-  await expect(page.getByRole('heading', { name: 'Reopen from Pascal' })).toBeVisible()
-  await expect(page.locator('canvas')).toHaveCount(0)
+  await roundTrip()
   expect(artifactReads).toEqual([`Bearer ${TOKEN}`])
-  expect(calls.scene).toBe(1)
+  expect(calls.authorization).toEqual([`Bearer ${TOKEN}`, undefined])
 })
 
 test('captures and scrubs the callback before exchange, then resolves its project', async ({ page, baseURL }) => {

@@ -202,3 +202,48 @@ test.describe('with motion', () => {
     await expect(chrome).toHaveAttribute('data-mode', 'exterior')
   })
 })
+
+// A configure credential Pascal rejects before its expiry, with this tab's one recovery round trip
+// already spent (the replacement was rejected too).
+async function spentRecovery(page: Page) {
+  await page.addInitScript(({ issuer, project, viewer }) => {
+    sessionStorage.setItem(`pascal:recovery:${JSON.stringify([issuer, viewer, project, location.origin])}`, '1')
+  }, { issuer: ISSUER, project: PROJECT, viewer: VIEWER })
+}
+
+function rejectingScenes(page: Page, publicProject: boolean) {
+  return page.route('**/api/projects/*/scene*', (route) => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    if (route.request().headers().authorization) return route.fulfill({ status: 401, json: { error: 'unauthorized' }, headers: cors })
+    if (!publicProject) return route.fulfill({ status: 404, json: { error: 'not_found' }, headers: cors })
+    return route.fulfill({ json: withSettings(settings(null, { revision: 0 })), headers: cors })
+  })
+}
+
+test('the reopen screen after Customize restarts Customize with scope=configure', async ({ page }) => {
+  await mockPascal(page)
+  await rejectingScenes(page, false)
+  await seedConfigureCredential(page)
+  await spentRecovery(page)
+  await page.route('**/viewer/authorize?*', (route) => route.fulfill({ contentType: 'text/html', body: '<p>Pascal authorize</p>' }))
+  await page.goto(configureEntry)
+  await expect(page.getByRole('heading', { name: 'Reopen from Pascal' })).toBeVisible()
+  await expect(page.getByText('Sign in again to keep customizing, or open this project from Pascal.')).toBeVisible()
+  await page.getByRole('button', { name: 'Sign in with Pascal' }).click()
+  await page.waitForURL(`${ISSUER}/viewer/authorize?*`)
+  const query = new URL(page.url()).searchParams
+  expect(query.get('scope')).toBe('configure')
+  expect(query.get('interaction')).toBe('sign_in')
+})
+
+test('a public project falls back to its public view, read-only, and says Customize needs reopening', async ({ page, baseURL }) => {
+  await mockPascal(page)
+  await rejectingScenes(page, true)
+  await seedConfigureCredential(page)
+  await spentRecovery(page)
+  await page.goto(configureEntry)
+  await expect(page.locator(READY)).toBeVisible({ timeout: 60_000 })
+  expect(page.url()).toBe(new URL(`/?project=${PROJECT}`, baseURL).href)
+  await expect(page.getByRole('region', { name: 'Customize' })).toHaveCount(0)
+  await expect(page.getByText('Your Customize session ended.', { exact: false })).toBeVisible()
+})

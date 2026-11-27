@@ -14,6 +14,11 @@ export type Transaction = {
   returnPath: string
   renewal?: boolean
   signIn?: boolean
+  /**
+   * Re-authorizes a session the tab held until Pascal rejected it before its expiry (revoked, the
+   * binding changed, the parent session ended); session access only, never a sign-in.
+   */
+  recovery?: boolean
 }
 export type Credential = {
   access_token: string
@@ -54,6 +59,30 @@ export const credentialKey = (issuer: string, viewer: string, project: string) =
   `pascal:credential:${JSON.stringify([issuer, viewer, project, location.origin])}`
 const reopenKey = (issuer: string, viewer: string, project: string) =>
   `pascal:reopen:${JSON.stringify([issuer, viewer, project, location.origin])}`
+const recoveryKey = (issuer: string, viewer: string, project: string) =>
+  `pascal:recovery:${JSON.stringify([issuer, viewer, project, location.origin])}`
+
+/**
+ * Takes this tab's one recovery round trip for a rejected session. Kept in `sessionStorage`, so it
+ * outlasts the navigation, reloads and a second failure; only a successful credentialed read gives
+ * it back. Without storage there is no budget that survives the trip, so there is no trip.
+ */
+export function spendRecovery(issuer: string, viewer: string, project: string): boolean {
+  try {
+    const key = recoveryKey(issuer, viewer, project)
+    if (sessionStorage.getItem(key) !== null) return false
+    sessionStorage.setItem(key, String(Date.now()))
+    return sessionStorage.getItem(key) !== null
+  } catch {
+    return false
+  }
+}
+
+export function restoreRecovery(issuer: string, viewer: string, project: string): void {
+  try { sessionStorage.removeItem(recoveryKey(issuer, viewer, project)) } catch {
+    // Storage denied: no budget was spent.
+  }
+}
 
 function readStored(key: string): unknown {
   try {
@@ -72,6 +101,8 @@ export function readTransaction(issuer: string): Transaction | null {
     !['session', 'share'].includes(value.access || '') ||
     typeof value.createdAt !== 'number' || typeof value.returnPath !== 'string' ||
     typeof value.redirect_uri !== 'string' ||
+    (value.recovery !== undefined && (value.recovery !== true || value.access !== 'session' ||
+      value.signIn === true || value.renewal === true)) ||
     !/^[A-Za-z0-9_-]{43}$/.test(value.state || '') ||
     !/^[A-Za-z0-9_-]{43}$/.test(value.verifier || '')
   ) throw new ReopenRequired()
@@ -106,6 +137,20 @@ export function hasHandoffCallback(): boolean {
   return callback !== null
 }
 
+/**
+ * The callback answers a re-authorization of a session this tab held (`recovery` or `renewal`).
+ * Read before `exchangeCallback`, which consumes the transaction.
+ */
+export function callbackReauthorizes(issuer: string): boolean {
+  if (!callback) return false
+  try {
+    const transaction = readTransaction(issuer)
+    return !!transaction && transaction.access === 'session' && (transaction.recovery === true || transaction.renewal === true)
+  } catch {
+    return false
+  }
+}
+
 export function callbackProject(issuer: string): string | null {
   if (!callback) return null
   try { return readTransaction(issuer)?.project || null } catch { return null }
@@ -135,9 +180,12 @@ function base64url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+/** `recovery`: replaces a session credential Pascal rejected before its expiry, in the same mode. */
 export async function startAuthorize(
   issuer: string, descriptor: Descriptor, project: string, access: AccessMode, renewal = false, signIn = false,
+  recovery = false,
 ): Promise<void> {
+  if (recovery && (access !== 'session' || signIn || renewal)) throw new ReopenRequired(access)
   const state = base64url(crypto.getRandomValues(new Uint8Array(32)))
   const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)))
   const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))))
@@ -151,6 +199,7 @@ export async function startAuthorize(
     verifier, state, issuer, viewer: descriptor.viewer_id, project,
     redirect_uri: descriptor.redirect_uri, access, createdAt: Date.now(),
     returnPath: localReturnPath(returnUrl.pathname + returnUrl.search + returnUrl.hash), renewal, signIn,
+    ...(recovery ? { recovery } : {}),
   }
   sessionStorage.setItem(transactionKey(issuer), JSON.stringify(transaction))
   const url = new URL('/viewer/authorize', issuer)

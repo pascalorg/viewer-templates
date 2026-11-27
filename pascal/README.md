@@ -168,7 +168,9 @@ renews it with another trip through Pascal.
 
 - `canSignIn(baseUrl?)` resolves to `true` when this site is a registered viewer. Call it only on
   an access screen, so public visits make no extra request.
-- `signIn(projectId, baseUrl?)` leaves for Pascal and comes back to the current address.
+- `signIn(projectId, baseUrl?, { configure? })` leaves for Pascal and comes back to the current address.
+  With `configure: true` (the reopen screen's `configure`, after Customize) it restarts Customize
+  with `scope=configure` instead of a plain sign-in.
 - `SignInUnavailable` is what `signIn` throws, without leaving the page, when the site isn't
   registered.
 
