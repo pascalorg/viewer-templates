@@ -1,0 +1,575 @@
+@import "tailwindcss";
+@import "@pascal-app/viewer/ui/theme.css";
+@import "@fontsource/barlow/400.css";
+@import "@fontsource/barlow/500.css";
+@import "@fontsource/barlow/600.css";
+@import "@fontsource/barlow/700.css";
+@import "@fontsource-variable/geist-mono/wght.css";
+@source "../node_modules/@pascal-app/viewer/dist/ui";
+@source "../node_modules/@pascal-app/plugin-*/src";
+@source "./";
+
+/* The hosted viewer's type: Barlow, Geist Mono for figures (the sky clock, room areas). */
+@theme inline {
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Full-page theme tokens (status, access, loading and crash screens follow system light/dark)
+   plus shared light-glass studio tokens used by all in-canvas viewer chrome. */
+:root {
+  --radius: 0.75rem;
+  --background: #f6f7f9;
+  --foreground: #14161a;
+  --card: #ffffff;
+  --card-foreground: #14161a;
+  --popover: #ffffff;
+  --popover-foreground: #14161a;
+  --primary: #14161a;
+  --primary-foreground: #ffffff;
+  --secondary: #eef0f4;
+  --secondary-foreground: #1d2028;
+  --muted: #eef0f4;
+  --muted-foreground: #525763;
+  --accent: #e8ecf4;
+  --accent-foreground: #14161a;
+  --destructive: oklch(0.55 0.22 25);
+  --border: #dde1e9;
+  --input: #dde1e9;
+  --ring: #2649c4;
+
+  --studio-grid: rgb(20 22 26 / 0.055);
+  --studio-glow: rgb(38 73 196 / 0.045);
+
+  /* Light & airy frosted-glass chrome palette (shared by our HUD + remaining Pascal overlays in both OS themes). */
+  --glass-bg: rgb(255 255 255 / 0.84);
+  --glass-bg-strong: rgb(255 255 255 / 0.93);
+  --glass-bg-subtle: rgb(15 23 42 / 0.04);
+  --glass-bg-hover: rgb(15 23 42 / 0.065);
+  --glass-border: rgb(15 23 42 / 0.095);
+  --glass-border-strong: rgb(15 23 42 / 0.16);
+  --glass-rim: inset 0 1px 0 0 rgb(255 255 255 / 0.92);
+  --glass-shadow:
+    0 1px 2px rgb(15 23 42 / 0.05),
+    0 8px 24px -6px rgb(15 23 42 / 0.12),
+    0 20px 44px -16px rgb(15 23 42 / 0.09);
+  --glass-shadow-sm:
+    0 1px 2px rgb(15 23 42 / 0.06),
+    0 4px 14px -4px rgb(15 23 42 / 0.11);
+  --glass-ink: #14161a;
+  --glass-muted: #525763;
+  --glass-accent: #2649c4;
+  --glass-accent-hover: #1e3ca8;
+  --glass-accent-soft: rgb(38 73 196 / 0.10);
+  --glass-accent-border: rgb(38 73 196 / 0.34);
+  --glass-raised: #ffffff;
+  --glass-raised-soft: rgb(255 255 255 / 0.7);
+}
+
+/* Dark interface theme (src/hud/theme.ts sets data-hud-theme on <html>): the same glass, smoked. */
+html[data-hud-theme="dark"] {
+  --glass-bg: rgb(20 22 28 / 0.82);
+  --glass-bg-strong: rgb(24 26 33 / 0.94);
+  --glass-bg-subtle: rgb(255 255 255 / 0.05);
+  --glass-bg-hover: rgb(255 255 255 / 0.085);
+  --glass-border: rgb(255 255 255 / 0.1);
+  --glass-border-strong: rgb(255 255 255 / 0.18);
+  --glass-rim: inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+  --glass-shadow:
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 8px 24px -6px rgb(0 0 0 / 0.45),
+    0 20px 44px -16px rgb(0 0 0 / 0.4);
+  --glass-shadow-sm:
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 4px 14px -4px rgb(0 0 0 / 0.4);
+  --glass-ink: #eef0f4;
+  --glass-muted: #a3a8b4;
+  --glass-accent: #5677ee;
+  --glass-accent-hover: #6d8bf5;
+  --glass-accent-soft: rgb(86 119 238 / 0.18);
+  --glass-accent-border: rgb(86 119 238 / 0.45);
+  --glass-raised: rgb(255 255 255 / 0.1);
+  --glass-raised-soft: rgb(255 255 255 / 0.05);
+}
+
+.dark {
+  --background: #0c0d10;
+  --foreground: #f5f5f7;
+  --card: #14151a;
+  --card-foreground: #f5f5f7;
+  --popover: #16171d;
+  --popover-foreground: #ececf0;
+  --primary: #f5f5f7;
+  --primary-foreground: #0c0d10;
+  --secondary: #1f2028;
+  --secondary-foreground: #ececf0;
+  --muted: #1f2028;
+  --muted-foreground: #9a9ba8;
+  --accent: #242630;
+  --accent-foreground: #f5f5f7;
+  --destructive: oklch(0.68 0.19 22);
+  --border: #2b2d38;
+  --input: #2b2d38;
+  --ring: #6b8cff;
+
+  --studio-grid: rgb(255 255 255 / 0.045);
+  --studio-glow: rgb(107 140 255 / 0.06);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+}
+html, body, #root { height: 100%; margin: 0; }
+body { @apply bg-background text-foreground font-sans; text-wrap: pretty; }
+
+/* Shared frosted white glass surface for our custom HUD (src/hud/) and AnimationCaption. */
+.studio-hud-light {
+  --background: #ffffff;
+  --foreground: var(--glass-ink);
+  --card: #ffffff;
+  --card-foreground: var(--glass-ink);
+  --primary: var(--glass-ink);
+  --primary-foreground: #ffffff;
+  --secondary: #eef0f4;
+  --secondary-foreground: var(--glass-ink);
+  --muted: #eef0f4;
+  --muted-foreground: var(--glass-muted);
+  --accent: #e8ecf4;
+  --accent-foreground: var(--glass-ink);
+  --border: #dde1e9;
+  --input: #dde1e9;
+  --ring: var(--glass-accent);
+
+  background: var(--glass-bg);
+  color: var(--glass-ink);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-rim), var(--glass-shadow);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+}
+
+/* Crisp light-surface Switch controls inside our HUD regardless of OS dark mode. */
+.studio-hud-light [role="switch"][data-state="checked"] {
+  background: var(--glass-accent) !important;
+}
+.studio-hud-light [role="switch"][data-state="unchecked"] {
+  background: rgb(15 23 42 / 0.16) !important;
+}
+.studio-hud-light [role="switch"] > span {
+  background: #ffffff !important;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.25) !important;
+}
+
+/* Thin light-surface scrollbar shared across NavigatorRail and Inspector panels. */
+.hud-scroll,
+.anim-strip {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(15 23 42 / 0.16) transparent;
+}
+.hud-scroll::-webkit-scrollbar,
+.anim-strip::-webkit-scrollbar { width: 5px; height: 5px; }
+.hud-scroll::-webkit-scrollbar-track,
+.anim-strip::-webkit-scrollbar-track { background: transparent; }
+.hud-scroll::-webkit-scrollbar-thumb,
+.anim-strip::-webkit-scrollbar-thumb { background: rgb(15 23 42 / 0.16); border-radius: 999px; }
+.hud-scroll::-webkit-scrollbar-thumb:hover,
+.anim-strip::-webkit-scrollbar-thumb:hover { background: rgb(15 23 42 / 0.28); }
+
+/* Architectural drafting backdrop for full-screen status, loading and crash views. */
+.studio-backdrop {
+  background-color: var(--background);
+  background-image:
+    radial-gradient(circle at 50% 0%, var(--studio-glow), transparent 62%),
+    radial-gradient(var(--studio-grid) 1px, transparent 1px);
+  background-size: 100% 100%, 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+main[data-state] code {
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  color: var(--foreground);
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.125rem 0.375rem;
+}
+
+/* =============================================================================================
+   Remaining Pascal chrome — light restyle
+   Restyles the Pascal components still mounted over the stage (compass, WalkthroughHud, DroneHud,
+   SelectionCallout, ViewerHoverLabel, SceneLoader, 2D floorplan controls, and portalled Radix
+   tooltips/menus/popovers) to match our bright frosted-glass HUD in both OS light and dark modes.
+   ============================================================================================= */
+
+/* 1. Re-declare light tokens on remaining Pascal `.dark`-scoped overlays and Radix portals. */
+main[data-source] .dark,
+[data-slot="dropdown-menu-content"].dark,
+[data-slot="dropdown-menu-sub-content"].dark,
+[data-slot="popover-content"].dark,
+[data-slot="tooltip-content"].dark {
+  --background: #ffffff;
+  --foreground: var(--glass-ink);
+  --card: #ffffff;
+  --card-foreground: var(--glass-ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--glass-ink);
+  --primary: var(--glass-ink);
+  --primary-foreground: #ffffff;
+  --secondary: #eef0f4;
+  --secondary-foreground: var(--glass-ink);
+  --muted: #eef0f4;
+  --muted-foreground: var(--glass-muted);
+  --accent: #e8ecf4;
+  --accent-foreground: var(--glass-ink);
+  --destructive: oklch(0.55 0.22 25);
+  --border: #dde1e9;
+  --input: #dde1e9;
+  --ring: var(--glass-accent);
+  --shadow-color: rgb(15 23 42 / 0.06);
+  --shadow-elevation-3: var(--glass-rim), var(--glass-shadow-sm);
+  --shadow-elevation-4: var(--glass-rim), var(--glass-shadow);
+  --shadow-elevation-5: var(--glass-rim), var(--glass-shadow);
+}
+
+/* 2. FloorplanCompassButton ("Align view to north") — light frosted disc in both OS themes. */
+[data-pascal-viewer-stage] button[aria-label="Align view to north"],
+[data-pascal-viewer-stage] > div.pointer-events-none.z-30 > button[type="button"] {
+  background: var(--glass-bg) !important;
+  border-color: var(--glass-border) !important;
+  box-shadow: var(--glass-rim), var(--glass-shadow-sm) !important;
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+}
+[data-pascal-viewer-stage] button[aria-label="Align view to north"]:hover,
+[data-pascal-viewer-stage] > div.pointer-events-none.z-30 > button[type="button"]:hover {
+  background: var(--glass-bg-strong) !important;
+}
+[data-pascal-viewer-stage] button[aria-label="Align view to north"]:focus-visible,
+[data-pascal-viewer-stage] > div.pointer-events-none.z-30 > button[type="button"]:focus-visible {
+  outline: 2px solid var(--glass-accent);
+  outline-offset: 2px;
+}
+[data-pascal-viewer-stage] button[aria-label="Align view to north"] > span,
+[data-pascal-viewer-stage] > div.pointer-events-none.z-30 > button[type="button"] > span {
+  background: #d8dce6 !important;
+  box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.16) !important;
+}
+
+/* 3. Portalled Radix popovers, dropdown menus and tooltips. */
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"] {
+  background: var(--glass-bg-strong) !important;
+  border-color: var(--glass-border) !important;
+  box-shadow: var(--glass-rim), var(--glass-shadow) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  color: var(--glass-ink) !important;
+}
+[data-slot="popover-content"] {
+  border-radius: 1.25rem !important;
+}
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"] {
+  border-radius: 1rem !important;
+  padding: 0.375rem !important;
+}
+[data-slot="dropdown-menu-item"],
+[data-slot="dropdown-menu-sub-trigger"] {
+  border-radius: 0.625rem !important;
+  color: var(--glass-ink) !important;
+}
+[data-slot="dropdown-menu-item"][data-highlighted],
+[data-slot="dropdown-menu-sub-trigger"][data-highlighted],
+[data-slot="dropdown-menu-sub-trigger"][data-state="open"] {
+  background: var(--glass-bg-hover) !important;
+  color: var(--glass-ink) !important;
+}
+[data-slot="dropdown-menu-separator"] {
+  background: var(--glass-border) !important;
+}
+
+/* Tooltips: frosted white glass pill with matching arrow. */
+[data-slot="tooltip-content"] {
+  background: var(--glass-bg-strong) !important;
+  color: var(--glass-ink) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 9999px !important;
+  box-shadow: var(--glass-shadow-sm) !important;
+  backdrop-filter: blur(16px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(150%) !important;
+}
+[data-slot="tooltip-content"] svg {
+  background: var(--glass-bg-strong) !important;
+  fill: var(--glass-bg-strong) !important;
+}
+
+/* 4. WalkthroughHud & DroneHud (`[data-walkthrough-hud]`) — frosted light pills and crisp keycaps. */
+[data-walkthrough-hud] [class*="rounded-full"][class*="backdrop-blur"] {
+  background: var(--glass-bg) !important;
+  border-color: var(--glass-border) !important;
+  color: var(--glass-ink) !important;
+  box-shadow: var(--glass-rim), var(--glass-shadow-sm) !important;
+}
+[data-walkthrough-hud] > div:first-child > div:not([class*="rounded-full"]) {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 9999px;
+  padding: 0.125rem 0.625rem;
+  color: var(--glass-muted);
+  box-shadow: var(--glass-shadow-sm);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+[data-walkthrough-hud] kbd {
+  background: rgb(15 23 42 / 0.065) !important;
+  border-color: rgb(15 23 42 / 0.15) !important;
+  color: var(--glass-ink) !important;
+}
+[data-walkthrough-hud] button:hover {
+  background: var(--glass-bg-strong) !important;
+}
+[data-walkthrough-hud] button:focus-visible {
+  outline: 2px solid var(--glass-accent);
+  outline-offset: 2px;
+}
+
+/* 5. ViewerHoverLabel (`[data-testid="viewer-hover-label"]`) — light pill above bottom dock. */
+[data-testid="viewer-hover-label"] {
+  background: var(--glass-bg-strong) !important;
+  border-color: var(--glass-border) !important;
+  color: var(--glass-ink) !important;
+  box-shadow: var(--glass-rim), var(--glass-shadow-sm) !important;
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+}
+
+/* 6. SelectionCallout (`.pascal-callout`) — higher specificity beats its inline `<style>` block. */
+main[data-source] .pascal-callout {
+  --callout-ink: var(--glass-ink);
+  --callout-secondary: var(--glass-muted);
+  --callout-halo: rgb(255 255 255 / 0.92);
+  --callout-halo-soft: rgb(255 255 255 / 0.55);
+  --callout-control: rgb(15 23 42 / 0.055);
+  --callout-active: var(--glass-accent);
+  color: var(--glass-ink);
+  text-shadow: none;
+}
+main[data-source] .pascal-callout-pin {
+  background: var(--glass-accent);
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 0.95), 0 1px 4px rgb(15 23 42 / 0.35);
+  opacity: 1;
+}
+main[data-source] .pascal-callout-leader {
+  background: var(--glass-ink);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.7);
+  opacity: 0.55;
+}
+main[data-source] .pascal-callout-copy {
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: 1rem;
+  padding: 0.625rem 0.75rem;
+  box-shadow: var(--glass-rim), var(--glass-shadow);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+}
+main[data-source] .pascal-callout-actions button,
+main[data-source] .pascal-callout-range {
+  min-width: 38px;
+  height: 36px;
+  border-radius: 9999px;
+  border-color: var(--glass-border);
+  background: var(--glass-bg-subtle);
+  color: var(--glass-ink);
+  text-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+main[data-source] .pascal-callout-actions button:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-strong);
+}
+main[data-source] .pascal-callout-actions button[aria-pressed="true"] {
+  background: var(--glass-accent);
+  border-color: var(--glass-accent);
+  color: #ffffff;
+}
+main[data-source] .pascal-callout-actions button:focus-visible {
+  outline: 2px solid var(--glass-accent);
+  outline-offset: 2px;
+}
+main[data-source] .pascal-callout-actions svg {
+  filter: none;
+}
+main[data-source] .pascal-callout-actions .pascal-callout-dismiss {
+  background: transparent;
+  border-color: transparent;
+  color: var(--glass-muted);
+}
+main[data-source] .pascal-callout-actions .pascal-callout-dismiss:hover {
+  background: var(--glass-bg-hover);
+  color: var(--glass-ink);
+}
+main[data-source] .pascal-callout-range input {
+  accent-color: var(--glass-accent);
+}
+
+/* 7. In-canvas SceneLoader (inside `main[data-source]` while the 3D scene mounts). */
+main[data-source] > div:has([class*="pascal-loader-"]) {
+  background: rgb(246 247 249 / 0.94) !important;
+  color: var(--glass-ink) !important;
+}
+main[data-source] > div:has([class*="pascal-loader-"]) [class*="pascal-loader-"] {
+  color: var(--glass-ink) !important;
+}
+
+/* 8. 2D Floorplan zoom/fit buttons: matching hover & focus ring. */
+[data-pascal-viewer-stage] button[aria-label="Zoom out"]:hover,
+[data-pascal-viewer-stage] button[aria-label="Fit floor plan"]:hover,
+[data-pascal-viewer-stage] button[aria-label="Zoom in"]:hover {
+  background: var(--glass-bg-hover) !important;
+  color: var(--glass-ink) !important;
+}
+[data-pascal-viewer-stage] button[aria-label="Zoom out"]:focus-visible,
+[data-pascal-viewer-stage] button[aria-label="Fit floor plan"]:focus-visible,
+[data-pascal-viewer-stage] button[aria-label="Zoom in"]:focus-visible {
+  outline: 2px solid var(--glass-accent);
+  outline-offset: 1px;
+}
+
+/* =============================================================================================
+   Animations panel & captions
+   ============================================================================================= */
+
+/* Calm template glyphs animating on active, hover, or focus-visible. */
+.anim-glyph { width: 40px; height: 28px; overflow: visible; }
+.anim-draw { stroke-dasharray: 160; stroke-dashoffset: 0; }
+.anim-tilt { transform-box: fill-box; transform-origin: 0% 100%; }
+.anim-ring { transform-box: fill-box; transform-origin: center; opacity: 0.55; }
+.anim-ring-2 { opacity: 0.28; transform: scale(0.65); }
+.anim-orbit { transform-box: view-box; transform-origin: 20px 12px; }
+.anim-popup { transform-box: fill-box; transform-origin: 50% 100%; }
+
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-draw { animation: anim-draw 2.6s ease-in-out infinite; }
+@keyframes anim-draw { 0% { stroke-dashoffset: 160; } 60%, 100% { stroke-dashoffset: 0; } }
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-tilt { animation: anim-tilt 2.2s ease-in-out infinite; }
+@keyframes anim-tilt { 0%, 15% { transform: rotate(0deg); } 55%, 100% { transform: rotate(-90deg) translateY(0); } }
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-fall { animation: anim-fall 1.6s cubic-bezier(.55,0,.85,.4) infinite; }
+@keyframes anim-fall { 0% { transform: translateY(-4px); opacity: 0; } 15% { opacity: 1; } 70% { transform: translateY(18px); } 78% { transform: translateY(16px); } 86%, 100% { transform: translateY(18px); } }
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-snap-a { animation: anim-snap-a 2.4s ease-in-out infinite; }
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-snap-b { animation: anim-snap-b 2.4s ease-in-out infinite; }
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-snap-c { animation: anim-snap-c 2.4s ease-in-out infinite; }
+@keyframes anim-snap-a { 0%, 20% { transform: translate(-7px, 5px) rotate(-12deg); } 65%, 100% { transform: none; } }
+@keyframes anim-snap-b { 0%, 25% { transform: translate(8px, 6px) rotate(14deg); } 70%, 100% { transform: none; } }
+@keyframes anim-snap-c { 0%, 30% { transform: translate(0, -6px); } 75%, 100% { transform: none; } }
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-ring { animation: anim-ring 2s ease-out infinite; }
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-ring-2 { animation-delay: 1s; }
+@keyframes anim-ring { 0% { transform: scale(0.1); opacity: 1; } 100% { transform: scale(1.1); opacity: 0; } }
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-orbit { animation: anim-orbit 1.4s linear infinite; }
+@keyframes anim-orbit { from { transform: rotate(0deg) scale(0.9); } to { transform: rotate(360deg) scale(0.9); } }
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-popup { animation: anim-popup 2.4s ease-in-out infinite; }
+@keyframes anim-popup { 0%, 15% { transform: scaleY(0.04); } 45% { transform: scaleY(1.12); } 55%, 100% { transform: scaleY(1); } }
+.anim-card:is([aria-pressed="true"], :hover, :focus-visible) .anim-room { animation: anim-room 3.2s steps(1) infinite; }
+@keyframes anim-room { 0% { transform: translate(0, 0); } 25% { transform: translate(14px, 0); } 50% { transform: translate(14px, 9px); } 75% { transform: translate(0, 9px); } }
+
+/* Range scrubber, camera sliders and time-of-day slider: generous hit box with an accented track on light glass. */
+.anim-scrub {
+  --scrub-color: color-mix(in oklab, var(--anim-accent, var(--glass-accent)) 78%, #0f172a);
+  appearance: none;
+  -webkit-appearance: none;
+  height: 18px;
+  background: transparent;
+  border-radius: 999px;
+}
+.anim-scrub:focus-visible {
+  outline: 2px solid var(--glass-accent);
+  outline-offset: 2px;
+}
+.anim-scrub::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--scrub-color) var(--anim-progress),
+    rgb(15 23 42 / 0.14) var(--anim-progress)
+  );
+}
+.anim-scrub::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 999px;
+  background: var(--scrub-color);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 0.12), 0 1px 4px rgb(15 23 42 / 0.28);
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.anim-scrub:hover::-webkit-slider-thumb,
+.anim-scrub:active::-webkit-slider-thumb {
+  transform: scale(1.14);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--scrub-color) 24%, transparent), 0 2px 6px rgb(15 23 42 / 0.3);
+}
+.anim-scrub::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--scrub-color) var(--anim-progress),
+    rgb(15 23 42 / 0.14) var(--anim-progress)
+  );
+}
+.anim-scrub::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--scrub-color);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 0.12), 0 1px 4px rgb(15 23 42 / 0.28);
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.anim-scrub:hover::-moz-range-thumb,
+.anim-scrub:active::-moz-range-thumb {
+  transform: scale(1.14);
+}
+.anim-scrub:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Active playback pulse dot and template title card entrance. */
+.anim-live-dot { animation: anim-live-pulse 1.8s ease-in-out infinite; }
+@keyframes anim-live-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.82); } }
+
+.anim-caption { animation: anim-caption-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes anim-caption-in { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-glyph *,
+  .anim-caption,
+  .anim-live-dot {
+    animation: none !important;
+  }
+  .anim-card,
+  .studio-interactive,
+  [data-navigator-rail],
+  .anim-scrub::-webkit-slider-thumb,
+  .anim-scrub::-moz-range-thumb {
+    transition-duration: 0.01ms !important;
+  }
+  .anim-card,
+  .studio-interactive:not([aria-hidden]),
+  .anim-scrub::-webkit-slider-thumb,
+  .anim-scrub::-moz-range-thumb {
+    transform: none !important;
+  }
+}
+
+/* Room labels are off for now: hide the 3D room pills and their detail chip. Delete this rule to
+   bring them back. Room highlights and the selected room's callout still show. */
+[data-room-label],
+[data-room-label-detail] { display: none !important; }
