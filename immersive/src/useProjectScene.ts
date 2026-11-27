@@ -203,7 +203,9 @@ export function useProjectScene(
       try {
         if (error instanceof PascalError && error.code === 'unauthorized' && access.kind === 'credential') {
           publish({ kind: 'opening' })
-          await rejectCredential(access.credential, error.status!)
+          const next = await rejectCredential(access.credential, error.status!, baseUrl)
+          // The session ended for good on a public project: read its public view.
+          if (next.kind === 'anonymous' && !signal.aborted) setAttempt({ quiet: false })
           return
         }
         throw error

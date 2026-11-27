@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { customizeHinted, customizeRefused, customizeRequested, enterCustomize, saveSettings, type ViewerSettings, ViewerSettingsError } from '../pascal'
+import { customizeHinted, customizeNeedsReopen, customizeRefused, customizeRequested, enterCustomize, saveSettings, type ViewerSettings, ViewerSettingsError } from '../pascal'
 import { handoffNavigating } from '../pascal/handoff'
 import { rememberPanelOpen } from './panelState'
 
@@ -35,6 +35,11 @@ export type ViewerSettingsHandle<T> = {
    * or the entry's `configure=available` hint), and Pascal has not refused it in this tab.
    */
   available: boolean
+  /**
+   * Pascal ended this visitor's Customize session for good and the page fell back to the project's
+   * public view: Customize is offered again, through `enter`, and says it needs reopening.
+   */
+  reopenNeeded: boolean
   /** For a manager without the pass: leaves for Pascal and comes back with it (or, refused, where it was). */
   enter(): Promise<void>
   /** `enter` is on its way to Pascal. */
@@ -100,7 +105,8 @@ export function useViewerSettings<T>({ settings, token, baseUrl, projectId, pars
   // The entry's hint is read once: the address changes on the way in, not while the page is open.
   const [hinted] = useState(() => customizeHinted(projectId, baseUrl))
   const [requested] = useState(() => customizeRequested(projectId))
-  const available = canConfigure ||
+  const reopenNeeded = !canConfigure && customizeNeedsReopen(projectId, baseUrl)
+  const available = canConfigure || reopenNeeded ||
     ((settings?.configureAvailable === true || hinted) && !customizeRefused(projectId, baseUrl))
   const [entering, setEntering] = useState(false)
   const [enterError, setEnterError] = useState<Error | null>(null)
@@ -215,5 +221,5 @@ export function useViewerSettings<T>({ settings, token, baseUrl, projectId, pars
     }
   }, [canConfigure, entering, projectId, baseUrl])
 
-  return { value, saved, canConfigure, requested, available, enter, entering, enterError, dirty, status, error, set, save, discard, reloadLatest }
+  return { value, saved, canConfigure, requested, available, reopenNeeded, enter, entering, enterError, dirty, status, error, set, save, discard, reloadLatest }
 }

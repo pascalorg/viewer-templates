@@ -4,7 +4,7 @@ import type { ViewerSettingsHandle } from './useViewerSettings'
 import './settings-panel.css'
 
 type PanelSettings = Pick<ViewerSettingsHandle<unknown>,
-  'canConfigure' | 'requested' | 'available' | 'enter' | 'entering' | 'enterError' |
+  'canConfigure' | 'requested' | 'available' | 'reopenNeeded' | 'enter' | 'entering' | 'enterError' |
   'dirty' | 'status' | 'error' | 'save' | 'discard' | 'reloadLatest'>
 
 function message({ status, dirty, error }: PanelSettings): string {
@@ -86,7 +86,7 @@ export function SettingsPanel({ settings, children, title = 'Customize', descrip
   }
 
   if (!expanded) {
-    const { dirty, entering, enterError } = settings
+    const { dirty, entering, enterError, reopenNeeded } = settings
     return (
       <div className="pascal-settings-tab-wrap">
         <button
@@ -105,7 +105,9 @@ export function SettingsPanel({ settings, children, title = 'Customize', descrip
           <span>{entering ? 'Opening…' : title}</span>
           {dirty ? <span aria-hidden="true" className="pascal-settings-dot" /> : null}
         </button>
-        {enterError ? <p className="pascal-settings-tab-note" role="status">Customize isn't available here.</p> : null}
+        {enterError ? <p className="pascal-settings-tab-note" role="status">Customize isn't available here.</p>
+          : reopenNeeded ? <p className="pascal-settings-tab-note" role="status">Your Customize session ended. You're seeing the public view; press Customize to reopen it.</p>
+            : null}
       </div>
     )
   }

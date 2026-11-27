@@ -21,7 +21,7 @@ function Project({ projectId }: { projectId: string }) {
     case 'opening': return <LoadingScreen opening />
     case 'downloading': return <LoadingScreen progress={state.progress} />
     case 'refused': return <RefusedScreen baseUrl={PASCAL_BASE_URL} projectId={projectId} />
-    case 'reopen': return <NeedsAccessScreen access={state.access} baseUrl={PASCAL_BASE_URL} projectId={projectId} />
+    case 'reopen': return <NeedsAccessScreen access={state.access} baseUrl={PASCAL_BASE_URL} configure={state.configure} projectId={projectId} />
     case 'error': return <ErrorScreen error={state.error} onRetry={reload} baseUrl={PASCAL_BASE_URL} projectId={projectId} anonymous={state.anonymous} />
     case 'no-file': return <NoFileScreen scene={state.scene} onRetry={reload} />
     case 'live':

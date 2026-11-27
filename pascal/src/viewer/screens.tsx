@@ -42,7 +42,7 @@ export function LoadingScreen({ opening = false, progress }: { opening?: boolean
  * Sign in with Pascal is offered only when this origin is a registered viewer (`canSignIn`).
  * Until that is known, and on unregistered sites, screens show their no-button copy.
  */
-function useSignIn(baseUrl: string, projectId: string, enabled = true) {
+function useSignIn(baseUrl: string, projectId: string, enabled = true, configure = false) {
   const [registered, setRegistered] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,7 +56,7 @@ function useSignIn(baseUrl: string, projectId: string, enabled = true) {
   const start = async () => {
     setBusy(true)
     setError(null)
-    try { await signIn(projectId, baseUrl) } catch (failure) {
+    try { await signIn(projectId, baseUrl, { configure }) } catch (failure) {
       setError(failure instanceof SignInUnavailable ? "Sign-in isn't available on this site."
         : "Sign-in couldn't start. Try again.")
       setBusy(false)
@@ -92,16 +92,19 @@ export function RefusedScreen({ baseUrl, projectId }: { baseUrl: string; project
   </Status>
 }
 
-export function NeedsAccessScreen({ access, baseUrl, projectId }: {
+/** After Customize (`configure`), the button restarts Customize (`scope=configure`), not a plain sign-in. */
+export function NeedsAccessScreen({ access, baseUrl, configure = false, projectId }: {
   access: 'share' | 'session'
   baseUrl: string
+  configure?: boolean
   projectId: string
 }) {
-  const signIn = useSignIn(baseUrl, projectId, access === 'session')
+  const signIn = useSignIn(baseUrl, projectId, access === 'session', configure)
   const projectUrl = new URL(projectId ? `/editor/${encodeURIComponent(projectId)}` : '/projects', baseUrl).href
   return <Status state="reopen" title={access === 'share' ? 'Reopen your share link' : 'Reopen from Pascal'}>
     <p>{access === 'share' ? 'Open the original Pascal share link again to restore access.'
-      : signIn.available ? 'Sign in again, or open this project from Pascal.'
+      : signIn.available ? configure ? 'Sign in again to keep customizing, or open this project from Pascal.'
+        : 'Sign in again, or open this project from Pascal.'
         : 'Open this project from Pascal again to restore access.'}</p>
     <Actions>
       {signIn.available && <SignInButton signIn={signIn} />}

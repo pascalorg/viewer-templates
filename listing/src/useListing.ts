@@ -9,7 +9,8 @@ export type ListingState =
   | { kind: 'loading' }
   | { kind: 'opening' }
   | { kind: 'refused' }
-  | { kind: 'reopen'; access: 'session' | 'share' }
+  /** `configure`: the visitor was customising; reopening restarts Customize. */
+  | { kind: 'reopen'; access: 'session' | 'share'; configure: boolean }
   | { kind: 'error'; error: PascalError; anonymous: boolean }
   /** The project is readable but its 3D file is not ready (`bake.status` other than ready). */
   | { kind: 'no-file'; scene: SceneResponse }
@@ -105,14 +106,16 @@ export function useListing(baseUrl: string, projectId: string) {
       try {
         if (error instanceof PascalError && error.code === 'unauthorized' && access.kind === 'credential') {
           setState({ kind: 'opening' })
-          await rejectCredential(access.credential, error.status!)
+          const next = await rejectCredential(access.credential, error.status!, baseUrl)
+          // The session ended for good on a public project: read its public view.
+          if (next.kind === 'anonymous' && !signal.aborted) setAttempt({ quiet: false })
           return
         }
         throw error
       } catch (failure) {
         if (signal.aborted) return
         setState(failure instanceof ReopenRequired
-          ? { kind: 'reopen', access: failure.access }
+          ? { kind: 'reopen', access: failure.access, configure: failure.configure }
           : { kind: 'error', anonymous: access.kind === 'anonymous' && !PASCAL_TOKEN_URL, error: asPascalError(failure) })
       }
     })

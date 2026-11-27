@@ -58,7 +58,7 @@ function Listing({ projectId }: { projectId: string }) {
   if (state.kind === 'loading') return <Status title="Loading project…" state="loading" />
   if (state.kind === 'opening') return <Status title="Opening from Pascal…" state="opening" />
   if (state.kind === 'refused') return <RefusedStatus projectId={projectId} />
-  if (state.kind === 'reopen') return <ReopenStatus access={state.access} projectId={projectId} />
+  if (state.kind === 'reopen') return <ReopenStatus access={state.access} configure={state.configure} projectId={projectId} />
   if (state.kind === 'error') return <ErrorStatus error={state.error} onRetry={reload} projectId={projectId} anonymous={state.anonymous} />
   if (state.kind === 'no-file') return <NoFileStatus scene={state.scene} onRetry={reload} />
   return <Scene key={state.kind === 'live' ? 'live' : 'baked'} state={state} onRetry={reload} />
@@ -270,7 +270,7 @@ function NoFileStatus({ scene, onRetry }: { scene: SceneResponse; onRetry: () =>
  * Sign in with Pascal is offered only when this origin is a registered viewer (`canSignIn`) and
  * no company token endpoint is set. Until that is known, screens show their no-button copy.
  */
-function useSignIn(projectId: string, enabled = true) {
+function useSignIn(projectId: string, enabled = true, configure = false) {
   const [registered, setRegistered] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -284,7 +284,7 @@ function useSignIn(projectId: string, enabled = true) {
   const start = async () => {
     setBusy(true)
     setError(null)
-    try { await signIn(projectId, PASCAL_BASE_URL) } catch (failure) {
+    try { await signIn(projectId, PASCAL_BASE_URL, { configure }) } catch (failure) {
       setError(failure instanceof SignInUnavailable ? "Sign-in isn't available on this site."
         : "Sign-in couldn't start. Try again.")
       setBusy(false)
@@ -334,8 +334,9 @@ function RefusedStatus({ projectId }: { projectId: string }) {
   )
 }
 
-function ReopenStatus({ access, projectId }: { access: 'session' | 'share'; projectId: string }) {
-  const signIn = useSignIn(projectId, access === 'session')
+/** After Customize, the button restarts Customize (`scope=configure`), not a plain sign-in. */
+function ReopenStatus({ access, configure, projectId }: { access: 'session' | 'share'; configure: boolean; projectId: string }) {
+  const signIn = useSignIn(projectId, access === 'session', configure)
   const projectUrl = new URL(
     projectId ? `/editor/${encodeURIComponent(projectId)}` : '/projects',
     PASCAL_BASE_URL,
@@ -345,7 +346,8 @@ function ReopenStatus({ access, projectId }: { access: 'session' | 'share'; proj
       {access === 'share'
         ? 'Open the original Pascal share link again to restore access.'
         : signIn.available
-          ? 'Sign in again, or open this project from Pascal.'
+          ? configure ? 'Sign in again to keep customizing, or open this project from Pascal.'
+            : 'Sign in again, or open this project from Pascal.'
           : 'Open this project from Pascal again to restore access.'}
       <Actions>
         {signIn.available && <SignInButton signIn={signIn} />}

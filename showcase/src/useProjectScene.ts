@@ -9,7 +9,8 @@ export type ProjectSceneState =
   | { kind: 'loading' }
   | { kind: 'opening' }
   | { kind: 'refused' }
-  | { kind: 'reopen'; access: 'session' | 'share' }
+  /** `configure`: the visitor was customising; reopening restarts Customize. */
+  | { kind: 'reopen'; access: 'session' | 'share'; configure: boolean }
   | { kind: 'error'; error: PascalError; anonymous: boolean }
   | { kind: 'no-file'; scene: SceneResponse }
   | { kind: 'downloading'; scene: SceneResponse; progress: number | null }
@@ -204,13 +205,15 @@ export function useProjectScene(
       try {
         if (error instanceof PascalError && error.code === 'unauthorized' && access.kind === 'credential') {
           publish({ kind: 'opening' })
-          await rejectCredential(access.credential, error.status!)
+          const next = await rejectCredential(access.credential, error.status!, baseUrl)
+          // The session ended for good on a public project: read its public view.
+          if (next.kind === 'anonymous' && !signal.aborted) setAttempt({ quiet: false })
           return
         }
         throw error
       } catch (failure) {
         publish(failure instanceof ReopenRequired
-          ? { kind: 'reopen', access: failure.access }
+          ? { kind: 'reopen', access: failure.access, configure: failure.configure }
           : { kind: 'error', anonymous: access.kind === 'anonymous', error: failure instanceof PascalError
             ? failure : new PascalError('http', String(failure)) })
       }
