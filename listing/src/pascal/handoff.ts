@@ -63,10 +63,26 @@ export class ReopenRequired extends Error {
   }
 }
 
+/**
+ * Pascal refused a validated callback. `reauthorizes`: the transaction was a recovery or renewal
+ * of a session this tab held; `returnPath` its validated return address.
+ */
 export class SignInRefused extends Error {
-  constructor() {
+  constructor(readonly reauthorizes = false, readonly configure = false, readonly returnPath: string | null = null) {
     super("This account can't open this project")
     this.name = 'SignInRefused'
+  }
+}
+
+/**
+ * A validated callback whose exchange gave no usable credential (it failed, or Customize was asked
+ * for and not granted). Only this, never an invalid or tampered callback, may lead a session this
+ * tab held to the public view. `returnPath`: the transaction's validated return address.
+ */
+export class ExchangeFailed extends ReopenRequired {
+  constructor(access: AccessMode, configure: boolean, readonly reauthorizes: boolean, readonly returnPath: string) {
+    super(access, configure)
+    this.name = 'ExchangeFailed'
   }
 }
 
@@ -97,24 +113,39 @@ const recoveryKey = (issuer: string, viewer: string, project: string) =>
   `pascal:recovery:${JSON.stringify([issuer, viewer, project, location.origin])}`
 
 /**
- * Takes this tab's one recovery round trip for a rejected session. Kept in `sessionStorage`, so it
- * outlasts the navigation, reloads and a second failure; only a successful credentialed read gives
- * it back. Without storage there is no budget that survives the trip, so there is no trip.
+ * A session credential this tab held that Pascal rejected, and what became of it: `configure`, the
+ * visitor was customising; `spent`, the tab's one recovery round trip has been taken. Kept in
+ * `sessionStorage`, so navigation, reloads and repeated failures see it; only a successful
+ * credentialed read clears it.
  */
-export function spendRecovery(issuer: string, viewer: string, project: string): boolean {
+export type Recovery = { configure: boolean; spent: boolean }
+
+/** Unreadable or malformed counts as spent: no automatic trip without a budget that survives it. */
+export function readRecovery(issuer: string, viewer: string, project: string): Recovery | null {
+  try {
+    const stored = sessionStorage.getItem(recoveryKey(issuer, viewer, project))
+    if (stored === null) return null
+    const value = JSON.parse(stored) as Partial<Recovery> | null
+    return { configure: value?.configure === true, spent: value?.spent !== false }
+  } catch {
+    return { configure: false, spent: true }
+  }
+}
+
+/** False when storage can't hold it: then there is no budget to spend. */
+export function writeRecovery(issuer: string, viewer: string, project: string, recovery: Recovery): boolean {
   try {
     const key = recoveryKey(issuer, viewer, project)
-    if (sessionStorage.getItem(key) !== null) return false
-    sessionStorage.setItem(key, String(Date.now()))
-    return sessionStorage.getItem(key) !== null
+    sessionStorage.setItem(key, JSON.stringify(recovery))
+    return sessionStorage.getItem(key) === JSON.stringify(recovery)
   } catch {
     return false
   }
 }
 
-export function restoreRecovery(issuer: string, viewer: string, project: string): void {
+export function clearRecovery(issuer: string, viewer: string, project: string): void {
   try { sessionStorage.removeItem(recoveryKey(issuer, viewer, project)) } catch {
-    // Storage denied: no budget was spent.
+    // Storage denied: nothing was kept.
   }
 }
 
@@ -186,21 +217,6 @@ export function captureHandoffCallback(): void {
 
 export function hasHandoffCallback(): boolean {
   return callback !== null
-}
-
-/**
- * The callback answers a re-authorization of a session this tab held (`recovery` or `renewal`), and
- * whether it asked for configure. Read before `exchangeCallback`, which consumes the transaction.
- */
-export function callbackReauthorizes(issuer: string): { configure: boolean } | null {
-  if (!callback) return null
-  try {
-    const transaction = readTransaction(issuer)
-    return transaction && transaction.access === 'session' && (transaction.recovery || transaction.renewal)
-      ? { configure: transaction.configure === true } : null
-  } catch {
-    return null
-  }
 }
 
 export function callbackProject(issuer: string): string | null {
@@ -360,6 +376,7 @@ export async function exchangeCallback(
 ): Promise<StoredCredential> {
   let access: AccessMode = 'session'
   let configure = false
+  let validated: { returnPath: string; reauthorizes: boolean } | null = null
   try {
     let transaction: Transaction | null
     try { transaction = readTransaction(issuer) } finally {
@@ -404,6 +421,8 @@ export async function exchangeCallback(
       // The view the pass was asked from: this project, this viewer, and not itself configure mode.
       (fallbackQuery !== null && (!hintOnly(fallbackQuery) || !thisPage(fallbackQuery, project, transaction.viewer)))
     ) throw new ReopenRequired(access)
+    const reauthorizes = access === 'session' && (transaction.recovery === true || transaction.renewal === true)
+    validated = { returnPath, reauthorizes }
     if (callback.error !== null) {
       if (fallbackPath !== null) {
         // The pass asked for from inside the viewer was refused (a forged hint, a demoted manager):
@@ -413,7 +432,7 @@ export async function exchangeCallback(
         throw new CustomizeRefused()
       }
       history.replaceState(history.state, '', returnPath)
-      throw new SignInRefused()
+      throw new SignInRefused(reauthorizes, configure, returnPath)
     }
     const response = await fetch(new URL('/api/viewer-handoff/exchange', issuer), {
       method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
@@ -426,11 +445,11 @@ export async function exchangeCallback(
       body.token_type !== 'Bearer' || body.revision !== 'published' ||
       typeof body.expires_at !== 'string' || !Number.isFinite(Date.parse(body.expires_at)) ||
       Date.parse(body.expires_at) <= Date.now()
-    ) throw new ReopenRequired(access)
+    ) throw new ExchangeFailed(access, configure, reauthorizes, returnPath)
     // Asked for configure and not granted it: never silently continue as a reader. From inside the
     // viewer that is a refusal (the credential is dropped); a Customize link from Pascal reopens.
     if (transaction.configure === true && body.scope !== 'configure') {
-      if (fallbackPath === null) throw new ReopenRequired(access)
+      if (fallbackPath === null) throw new ExchangeFailed(access, configure, reauthorizes, returnPath)
       history.replaceState(history.state, '', fallbackPath)
       rememberCustomize(issuer, project, true)
       throw new CustomizeRefused()
@@ -446,7 +465,9 @@ export async function exchangeCallback(
     history.replaceState(history.state, '', returnPath)
     return credential
   } catch (error) {
-    if (error instanceof SignInRefused || error instanceof CustomizeRefused) throw error
+    if (error instanceof SignInRefused || error instanceof CustomizeRefused || error instanceof ExchangeFailed) throw error
+    // The callback was validated but the exchange never answered usably (network, a non-JSON body).
+    if (validated) throw new ExchangeFailed(access, configure, validated.reauthorizes, validated.returnPath)
     throw new ReopenRequired(access, configure)
   }
 }

@@ -97,10 +97,13 @@ anonymous), reads the scene and picks a source: `baked` when a bake is ready and
 `VITE_PASCAL_SOURCE` is not `live`, otherwise `live`. For a bake it downloads the GLB into a blob
 URL, renewing the signed URL when needed. It then awaits `prepareSceneRuntime` and only then
 publishes the state that mounts `ProjectViewer`. A session credential rejected before its expiry
-gets one fresh round trip to Pascal per tab, only for a project that does not read anonymously
-(Pascal refuses reader sessions on public projects); when it can't be restored, a public project
-shows its public view on its anonymous address, and anything else (and every share credential)
-leads to a "Reopen from Pascal" or "Reopen your share link" screen.
+gets one fresh round trip to Pascal per tab, only once a tokenless read says the project is
+definitively not public (Pascal refuses reader sessions on public projects); an indeterminate read
+(offline, 5xx, 429) is a retryable error. The outcome is kept for the tab, so a reload never starts
+another automatic trip. When the session can't be restored, a public project shows its public view
+on its anonymous address, and anything else (and every share credential, and every invalid
+callback) leads to a "Reopen from Pascal" or "Reopen your share link" screen. The rules are in
+[listing's AGENTS.md](../listing/AGENTS.md#open-from-pascal).
 
 `prepareSceneRuntime` waits up to 20 seconds for the plugins the scene needs. A plugin that
 arrives later bumps `runtimeRevision`: the live graph is set again and the bake's replacement

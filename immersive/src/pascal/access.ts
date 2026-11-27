@@ -1,8 +1,8 @@
-import { getScene } from './client'
+import { getScene, PascalError } from './client'
 import {
-  type AccessMode, type Descriptor, type StoredCredential, ReopenRequired, SignInRefused, SignInUnavailable,
-  callbackReauthorizes, detectEntry, exchangeCallback, hasHandoffCallback,
-  readCredential, rejectedAccess, rememberRejection, restoreRecovery, spendRecovery, startAuthorize, storeCredential,
+  type Descriptor, type Recovery, type StoredCredential, ExchangeFailed, ReopenRequired, SignInRefused, SignInUnavailable,
+  clearRecovery, detectEntry, exchangeCallback, hasHandoffCallback,
+  readCredential, readRecovery, rejectedAccess, rememberRejection, startAuthorize, storeCredential, writeRecovery,
 } from './handoff'
 
 export { ReopenRequired, SignInUnavailable } from './handoff'
@@ -13,9 +13,9 @@ const descriptors = new Map<string, Promise<Descriptor | null>>()
 const resolutions = new Map<string, Promise<Access>>()
 const rejections = new Map<string, Promise<Access>>()
 let callbackResult: Promise<StoredCredential> | undefined
-let callbackReauth = false
 let callbackCompleted = false
-const rejected = new Map<string, AccessMode>()
+/** Share credentials rejected on this page; a rejected session is kept as a `Recovery` instead. */
+const rejected = new Set<string>()
 /** Sessions that ended for good on this page, on public projects now shown read-only. */
 const publicFallbacks = new Set<string>()
 const RENEW_MARGIN = 120_000
@@ -60,7 +60,7 @@ function handoffInvolved(issuer: string, projectId: string): boolean {
     for (let i = 0; i < sessionStorage.length; i++) {
       const key = sessionStorage.key(i) ?? ''
       if (
-        (key.startsWith('pascal:credential:') || key.startsWith('pascal:reopen:')) &&
+        (key.startsWith('pascal:credential:') || key.startsWith('pascal:reopen:') || key.startsWith('pascal:recovery:')) &&
         key.includes(JSON.stringify(issuer)) &&
         key.includes(JSON.stringify(projectId))
       )
@@ -72,44 +72,75 @@ function handoffInvolved(issuer: string, projectId: string): boolean {
   return false
 }
 
-function reject(credential: StoredCredential) {
-  rememberRejection(credential)
-  rejected.set(JSON.stringify([credential.issuer, credential.project_id]), credential.access)
+function rejectShare(credential: StoredCredential): never {
+  rejected.add(JSON.stringify([credential.issuer, credential.project_id]))
+  throw new ReopenRequired('share')
 }
 
-/** A tokenless read of the published revision: true only for a public, published project. */
-async function readsAnonymously(baseUrl: string, projectId: string): Promise<boolean> {
+/** Records that Pascal rejected a session this tab held. A record storage can't hold counts as spent. */
+function noteRejection(issuer: string, viewer: string, projectId: string, spent: boolean): Recovery {
+  const recovery = { spent: spent || readRecovery(issuer, viewer, projectId)?.spent === true }
+  return writeRecovery(issuer, viewer, projectId, recovery) ? recovery : { spent: true }
+}
+
+/**
+ * An independent tokenless read of the published revision. `public`: it answers. `private`: the
+ * scene API says it is definitively not readable anonymously (404, 401, 403). Anything else
+ * (offline, 5xx, 429, an answer this client does not understand) is indeterminate and comes back
+ * as the error, for a retryable screen.
+ */
+async function probePublic(baseUrl: string, projectId: string): Promise<'public' | 'private' | PascalError> {
   try {
     await getScene(baseUrl, projectId)
-    return true
-  } catch {
-    return false
+    return 'public'
+  } catch (error) {
+    if (!(error instanceof PascalError)) return new PascalError('network', String(error))
+    return error.code === 'not_found' || error.code === 'not_published' || error.code === 'unauthorized' ? 'private' : error
   }
 }
 
 /**
- * A session the tab held can't be restored on this page. A public, published project (an
- * independent tokenless read says so) then shows its public view on its anonymous address, with
- * the handoff parameters dropped; anything else, and share access, asks to reopen.
+ * Shows a public project's public view on its anonymous address: `from` (the current address, or a
+ * callback's validated return path) without the handoff parameters.
  */
-async function showPublic(
-  issuer: string, baseUrl: string, projectId: string, access: AccessMode, readable?: boolean,
-): Promise<Access> {
-  if (access !== 'session' || !(readable ?? await readsAnonymously(baseUrl, projectId))) throw new ReopenRequired(access)
-  const key = JSON.stringify([issuer, projectId])
-  publicFallbacks.add(key)
-  rejected.delete(key)
-  const url = new URL(location.href)
+function showPublic(issuer: string, projectId: string, from = location.href): Access {
+  publicFallbacks.add(JSON.stringify([issuer, projectId]))
+  const url = new URL(from, location.origin)
   for (const name of HANDOFF_PARAMS) url.searchParams.delete(name)
   url.searchParams.set('project', projectId)
   history.replaceState(history.state, '', url.pathname + url.search + url.hash)
   return { kind: 'anonymous' }
 }
 
+/**
+ * Settles a session this tab held that Pascal rejected or would not restore. A public project shows
+ * its public view. A project the tokenless read says is definitively not public takes the tab's one
+ * round trip while it is unspent (Pascal refuses reader sessions on public projects, so never
+ * before that answer), else asks to reopen. An indeterminate read throws a retryable error that
+ * settles again on retry or reload; it never authorizes or shows the public view.
+ */
+async function settle(
+  issuer: string, baseUrl: string, projectId: string, viewer: string, descriptor: Descriptor | null,
+  recovery: Recovery, from?: string,
+): Promise<Access> {
+  const outcome = await probePublic(baseUrl, projectId)
+  if (outcome === 'public') return showPublic(issuer, projectId, from)
+  if (outcome !== 'private') throw outcome
+  if (!recovery.spent && descriptor && writeRecovery(issuer, viewer, projectId, { spent: true })) {
+    await startAuthorize(issuer, descriptor, projectId, 'session', false, false, true)
+    return { kind: 'opening' }
+  }
+  throw new ReopenRequired('session')
+}
+
 async function renew(credential: StoredCredential, descriptor: Descriptor | null, baseUrl: string): Promise<Access> {
-  reject(credential)
-  if (!descriptor || credential.renewalAttempted) return showPublic(credential.issuer, baseUrl, credential.project_id, credential.access)
-  await startAuthorize(credential.issuer, descriptor, credential.project_id, credential.access, true)
+  const { issuer, project_id: projectId, viewer_id: viewer } = credential
+  rememberRejection(credential)
+  if (!descriptor || credential.renewalAttempted) {
+    if (credential.access === 'share') return rejectShare(credential)
+    return settle(issuer, baseUrl, projectId, viewer, descriptor, noteRejection(issuer, viewer, projectId, true))
+  }
+  await startAuthorize(issuer, descriptor, projectId, credential.access, true)
   return { kind: 'opening' }
 }
 
@@ -122,28 +153,27 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
       if (publicFallbacks.has(key)) return { kind: 'anonymous' }
       if (!handoffInvolved(issuer, projectId) && !rejected.has(key)) return { kind: 'anonymous' }
       const descriptor = await resolveDescriptor(issuer)
-      if (rejected.has(key)) throw new ReopenRequired(rejected.get(key))
+      if (rejected.has(key)) throw new ReopenRequired('share')
       if (hasHandoffCallback() && !callbackCompleted) {
-        if (!callbackResult) {
-          callbackReauth = callbackReauthorizes(issuer)
-          callbackResult = exchangeCallback(issuer, projectId, descriptor)
-        }
-        let credential: StoredCredential | null
+        callbackResult ??= exchangeCallback(issuer, projectId, descriptor)
+        let credential: StoredCredential
         try {
-          credential = await callbackResult.catch((error: unknown) => {
-            if (error instanceof SignInRefused) return null
-            throw error
-          })
+          credential = await callbackResult
         } catch (error) {
-          // Pascal would not restore a session this tab held: a public project shows its public view.
-          if (!callbackReauth || !(error instanceof ReopenRequired)) throw error
-          callbackCompleted = true
-          return showPublic(issuer, baseUrl, projectId, 'session')
-        }
-        if (!credential) {
-          if (!callbackReauth) return { kind: 'refused' }
-          callbackCompleted = true
-          return showPublic(issuer, baseUrl, projectId, 'session').catch((): Access => ({ kind: 'refused' }))
+          // A validated answer (never an invalid or tampered callback): Pascal would not restore a
+          // session this tab held. It settles from the transaction's validated return path.
+          if ((error instanceof SignInRefused || error instanceof ExchangeFailed) && error.reauthorizes && descriptor) {
+            callbackCompleted = true
+            const viewer = descriptor.viewer_id
+            return settle(issuer, baseUrl, projectId, viewer, descriptor, noteRejection(issuer, viewer, projectId, true),
+              error.returnPath ?? undefined)
+              .catch((failure: unknown): Access => {
+                if (error instanceof SignInRefused && failure instanceof ReopenRequired) return { kind: 'refused' }
+                throw failure
+              })
+          }
+          if (error instanceof SignInRefused) return { kind: 'refused' }
+          throw error
         }
         callbackCompleted = true
         if (Date.parse(credential.expires_at) - Date.now() <= RENEW_MARGIN) return renew(credential, descriptor, baseUrl)
@@ -162,6 +192,12 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
         }
         const refusal = rejectedAccess(issuer, descriptor.viewer_id, projectId)
         if (refusal && (!entry || entry.access === 'anonymous')) throw new ReopenRequired(refusal)
+        // Pascal rejected a session this tab held: a reload or a re-entry never starts another
+        // automatic authorize for it. Explicit sign-in still can.
+        const recovery = readRecovery(issuer, descriptor.viewer_id, projectId)
+        if (recovery && (!entry || entry.access === 'session')) {
+          return settle(issuer, baseUrl, projectId, descriptor.viewer_id, descriptor, recovery)
+        }
       }
       if (entry && entry.access !== 'anonymous') {
         if (!descriptor) throw new ReopenRequired(mode)
@@ -180,11 +216,13 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
  * Handle scene-read rejection, including signed-URL renewal reads. An expired credential renews. A
  * session credential rejected before its expiry (revoked, the binding changed, the parent session
  * ended) gets one fresh top-level round trip per tab, never with the rejected token, and only on a
- * project that does not read anonymously, since Pascal refuses reader sessions on public projects.
- * When the session can't be restored, a public project resolves as `anonymous` (its public view, on
- * its anonymous address); nothing else falls back.
+ * project a tokenless read says is definitively not public, since Pascal refuses reader sessions on
+ * public projects. When the session can't be restored, a public project resolves as `anonymous`
+ * (its public view, on its anonymous address); nothing else falls back. An indeterminate read
+ * (offline, 5xx, 429) throws its `PascalError`, for a retryable screen.
  *
- * Concurrent rejections on this page share one outcome.
+ * The outcome is kept per tab (`Recovery`), so reloads and re-entries settle it again without a
+ * second automatic trip. Concurrent rejections on this page share one outcome.
  */
 export function rejectCredential(
   credential: StoredCredential, status: number, baseUrl = credential.issuer,
@@ -202,18 +240,15 @@ export function rejectCredential(
 
 async function handleRejection(credential: StoredCredential, status: number, baseUrl: string): Promise<Access> {
   const { issuer, project_id: projectId, viewer_id: viewer, access } = credential
-  reject(credential)
+  rememberRejection(credential)
   const descriptor = await resolveDescriptor(issuer)
   if (status === 401 && Date.parse(credential.expires_at) <= Date.now()) return renew(credential, descriptor, baseUrl)
-  if (status !== 401 || access !== 'session' || !descriptor) return showPublic(issuer, baseUrl, projectId, access)
-  const readable = await readsAnonymously(baseUrl, projectId)
-  if (readable || !spendRecovery(issuer, viewer, projectId)) return showPublic(issuer, baseUrl, projectId, access, readable)
-  await startAuthorize(issuer, descriptor, projectId, 'session', false, false, true)
-  return { kind: 'opening' }
+  if (access === 'share') return rejectShare(credential)
+  return settle(issuer, baseUrl, projectId, viewer, descriptor, noteRejection(issuer, viewer, projectId, status !== 401))
 }
 
 export function credentialReadSucceeded(credential: StoredCredential): void {
-  restoreRecovery(credential.issuer, credential.viewer_id, credential.project_id)
+  clearRecovery(credential.issuer, credential.viewer_id, credential.project_id)
   if (credential.renewalAttempted && Date.parse(credential.expires_at) - Date.now() > RENEW_MARGIN) {
     credential.renewalAttempted = false
     storeCredential(credential)

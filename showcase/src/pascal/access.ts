@@ -1,8 +1,8 @@
-import { getScene } from './client'
+import { getScene, PascalError } from './client'
 import {
-  type AccessMode, type Descriptor, type StoredCredential, CustomizeRefused, ReopenRequired, SignInRefused, SignInUnavailable,
-  callbackReauthorizes, customizeWasRefused, detectEntry, exchangeCallback, hasHandoffCallback,
-  readCredential, rejectedAccess, rememberRejection, restoreRecovery, spendRecovery, startAuthorize, storeCredential,
+  type Descriptor, type Recovery, type StoredCredential, CustomizeRefused, ExchangeFailed, ReopenRequired, SignInRefused,
+  SignInUnavailable, clearRecovery, customizeWasRefused, detectEntry, exchangeCallback, hasHandoffCallback,
+  readCredential, readRecovery, rejectedAccess, rememberRejection, startAuthorize, storeCredential, writeRecovery,
 } from './handoff'
 
 export { CustomizeRefused, ReopenRequired, SignInUnavailable } from './handoff'
@@ -13,9 +13,9 @@ const descriptors = new Map<string, Promise<Descriptor | null>>()
 const resolutions = new Map<string, Promise<Access>>()
 const rejections = new Map<string, Promise<Access>>()
 let callbackResult: Promise<StoredCredential> | undefined
-let callbackReauth: { configure: boolean } | null = null
 let callbackCompleted = false
-const rejected = new Map<string, { access: AccessMode; configure: boolean }>()
+/** Share credentials rejected on this page; a rejected session is kept as a `Recovery` instead. */
+const rejected = new Set<string>()
 /** Sessions that ended for good on this page, on public projects now shown read-only; `true`: it was Customize. */
 const publicFallbacks = new Map<string, boolean>()
 const RENEW_MARGIN = 120_000
@@ -127,7 +127,7 @@ function handoffInvolved(issuer: string, projectId: string): boolean {
     for (let i = 0; i < sessionStorage.length; i++) {
       const key = sessionStorage.key(i) ?? ''
       if (
-        (key.startsWith('pascal:credential:') || key.startsWith('pascal:reopen:')) &&
+        (key.startsWith('pascal:credential:') || key.startsWith('pascal:reopen:') || key.startsWith('pascal:recovery:')) &&
         key.includes(JSON.stringify(issuer)) &&
         key.includes(JSON.stringify(projectId))
       )
@@ -139,51 +139,88 @@ function handoffInvolved(issuer: string, projectId: string): boolean {
   return false
 }
 
-function reject(credential: StoredCredential) {
-  rememberRejection(credential)
-  rejected.set(JSON.stringify([credential.issuer, credential.project_id]),
-    { access: credential.access, configure: credential.configure === true })
+function rejectShare(credential: StoredCredential): never {
+  rejected.add(JSON.stringify([credential.issuer, credential.project_id]))
+  throw new ReopenRequired('share')
 }
 
-/** A tokenless read of the published revision: true only for a public, published project. */
-async function readsAnonymously(baseUrl: string, projectId: string): Promise<boolean> {
+/**
+ * Records that Pascal rejected (or would not restore) a session this tab held, keeping the
+ * Customize intent and a spent round trip. A record storage can't hold counts as spent.
+ */
+function noteRejection(issuer: string, viewer: string, projectId: string, configure: boolean, spent: boolean): Recovery {
+  const previous = readRecovery(issuer, viewer, projectId)
+  const recovery = { configure: configure || previous?.configure === true, spent: spent || previous?.spent === true }
+  return writeRecovery(issuer, viewer, projectId, recovery) ? recovery : { ...recovery, spent: true }
+}
+
+/**
+ * An independent tokenless read of the published revision. `public`: it answers. `private`: the
+ * scene API says it is definitively not readable anonymously (404, 401, 403). Anything else
+ * (offline, 5xx, 429, an answer this client does not understand) is indeterminate and comes back
+ * as the error, for a retryable screen.
+ */
+async function probePublic(baseUrl: string, projectId: string): Promise<'public' | 'private' | PascalError> {
   try {
     await getScene(baseUrl, projectId)
-    return true
-  } catch {
-    return false
+    return 'public'
+  } catch (error) {
+    if (!(error instanceof PascalError)) return new PascalError('network', String(error))
+    return error.code === 'not_found' || error.code === 'not_published' || error.code === 'unauthorized' ? 'private' : error
   }
 }
 
 /**
- * A session the tab held can't be restored on this page. A public, published project (an
- * independent tokenless read says so) then shows its public view on its anonymous address, with
- * the handoff and Customize parameters dropped; anything else, and share access, asks to reopen.
+ * Shows a public project's public view, read-only, on its anonymous address: `from` (the current
+ * address, or a callback's validated return path) without the handoff and Customize parameters.
  */
-async function showPublic(
-  issuer: string, baseUrl: string, projectId: string, access: AccessMode, configure: boolean, readable?: boolean,
-): Promise<Access> {
-  if (access !== 'session' || !(readable ?? await readsAnonymously(baseUrl, projectId))) {
-    throw new ReopenRequired(access, configure)
-  }
+function showPublic(issuer: string, projectId: string, configure: boolean, from = location.href): Access {
   const key = JSON.stringify([issuer, projectId])
   publicFallbacks.set(key, configure)
-  rejected.delete(key)
-  const url = new URL(location.href)
+  const url = new URL(from, location.origin)
   for (const name of HANDOFF_PARAMS) url.searchParams.delete(name)
   url.searchParams.set('project', projectId)
   history.replaceState(history.state, '', url.pathname + url.search + url.hash)
   return { kind: 'anonymous' }
 }
 
+/**
+ * Settles a session this tab held that Pascal rejected or would not restore (`recovery`). While the
+ * tab's one round trip is unspent it is taken, in the same mode and never with the rejected token:
+ * Customize at once (Pascal allows `scope=configure` on public projects), a reader's session only
+ * once the tokenless read says the project is definitively not public, since Pascal refuses those
+ * on public projects. Otherwise a public project shows its public view, a private or unpublished
+ * one asks to reopen (keeping the Customize intent), and an indeterminate read throws a retryable
+ * error that settles again on retry or reload; it never authorizes or shows the public view.
+ */
+async function settle(
+  issuer: string, baseUrl: string, projectId: string, viewer: string, descriptor: Descriptor | null,
+  recovery: Recovery, from?: string,
+): Promise<Access> {
+  const { configure } = recovery
+  const recover = async () => {
+    if (recovery.spent || !descriptor || !writeRecovery(issuer, viewer, projectId, { configure, spent: true })) return false
+    await startAuthorize(issuer, descriptor, projectId, 'session', false, false, configure, false, true)
+    return true
+  }
+  if (configure && await recover()) return { kind: 'opening' }
+  const outcome = await probePublic(baseUrl, projectId)
+  if (outcome === 'public') return showPublic(issuer, projectId, configure, from)
+  if (outcome !== 'private') throw outcome
+  if (!configure && await recover()) return { kind: 'opening' }
+  throw new ReopenRequired('session', configure)
+}
+
 async function renew(credential: StoredCredential, descriptor: Descriptor | null, baseUrl: string): Promise<Access> {
-  reject(credential)
+  const { issuer, project_id: projectId, viewer_id: viewer } = credential
+  const configure = credential.configure === true
+  rememberRejection(credential)
   if (!descriptor || credential.renewalAttempted) {
-    return showPublic(credential.issuer, baseUrl, credential.project_id, credential.access, credential.configure === true)
+    if (credential.access === 'share') return rejectShare(credential)
+    return settle(issuer, baseUrl, projectId, viewer, descriptor, noteRejection(issuer, viewer, projectId, configure, true))
   }
   // A configure credential renews as one: the manager keeps customising after the round trip.
-  await startAuthorize(credential.issuer, descriptor, credential.project_id, credential.access, true, false,
-    credential.configure === true)
+  await startAuthorize(issuer, descriptor, projectId, credential.access, true, false, configure)
   return { kind: 'opening' }
 }
 
@@ -196,33 +233,29 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
       if (publicFallbacks.has(key)) return { kind: 'anonymous' }
       if (!handoffInvolved(issuer, projectId) && !rejected.has(key)) return { kind: 'anonymous' }
       const descriptor = await resolveDescriptor(issuer)
-      const rejection = rejected.get(key)
-      if (rejection) throw new ReopenRequired(rejection.access, rejection.configure)
+      if (rejected.has(key)) throw new ReopenRequired('share')
       if (hasHandoffCallback() && !callbackCompleted) {
-        if (!callbackResult) {
-          callbackReauth = callbackReauthorizes(issuer)
-          callbackResult = exchangeCallback(issuer, projectId, descriptor)
-        }
-        let credential: StoredCredential | null | 'customize-refused'
+        callbackResult ??= exchangeCallback(issuer, projectId, descriptor)
+        let credential: StoredCredential | 'customize-refused'
         try {
-          credential = await callbackResult.catch((error: unknown) => {
-            if (error instanceof SignInRefused) return null
-            // Customize from inside the viewer was refused: the address is the visitor's view again,
-            // and the access they had resolves below as if they had never left.
-            if (error instanceof CustomizeRefused) return 'customize-refused' as const
-            throw error
-          })
+          credential = await callbackResult
         } catch (error) {
-          // Pascal would not restore a session this tab held: a public project shows its public view.
-          if (!callbackReauth || !(error instanceof ReopenRequired)) throw error
-          callbackCompleted = true
-          return showPublic(issuer, baseUrl, projectId, 'session', callbackReauth.configure || error.configure)
-        }
-        if (!credential) {
-          if (!callbackReauth) return { kind: 'refused' }
-          callbackCompleted = true
-          return showPublic(issuer, baseUrl, projectId, 'session', callbackReauth.configure)
-            .catch((): Access => ({ kind: 'refused' }))
+          // Customize from inside the viewer was refused: the address is the visitor's view again,
+          // and the access they had resolves below as if they had never left.
+          if (error instanceof CustomizeRefused) credential = 'customize-refused'
+          // A validated answer (never an invalid or tampered callback): Pascal would not restore a
+          // session this tab held. It settles from the transaction's validated return path.
+          else if ((error instanceof SignInRefused || error instanceof ExchangeFailed) && error.reauthorizes && descriptor) {
+            callbackCompleted = true
+            const viewer = descriptor.viewer_id
+            const recovery = noteRejection(issuer, viewer, projectId, error.configure, true)
+            return settle(issuer, baseUrl, projectId, viewer, descriptor, recovery, error.returnPath ?? undefined)
+              .catch((failure: unknown): Access => {
+                if (error instanceof SignInRefused && failure instanceof ReopenRequired) return { kind: 'refused' }
+                throw failure
+              })
+          } else if (error instanceof SignInRefused) return { kind: 'refused' }
+          else throw error
         }
         callbackCompleted = true
         if (credential !== 'customize-refused') {
@@ -256,6 +289,13 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
         }
         const refusal = rejectedAccess(issuer, descriptor.viewer_id, projectId)
         if (refusal && (!entry || entry.access === 'anonymous')) throw new ReopenRequired(refusal)
+        // Pascal rejected a session this tab held: a reload or a re-entry never starts another
+        // automatic authorize for it. Explicit sign-in and Customize still can.
+        const recovery = readRecovery(issuer, descriptor.viewer_id, projectId)
+        if (recovery && (arriving || !entry || entry.access === 'session')) {
+          return settle(issuer, baseUrl, projectId, descriptor.viewer_id, descriptor,
+            { ...recovery, configure: recovery.configure || entry?.configure === true })
+        }
       }
       if (arriving) return arrive()
       if (entry && entry.access !== 'anonymous') {
@@ -276,11 +316,13 @@ export function resolveAccess(projectId: string, baseUrl = 'https://editor.pasca
  * session credential rejected before its expiry (revoked from the Share popover, the binding
  * changed, the parent session ended) gets one fresh top-level round trip per tab, in the same mode
  * and never with the rejected token: a configure credential asks for `scope=configure` again; a
- * reader's session only on a project that does not read anonymously, since Pascal refuses those
- * on public projects. When the session can't be restored, a public project resolves as
- * `anonymous` (its public view, on its anonymous address); nothing else falls back.
+ * reader's session only on a project a tokenless read says is definitively not public, since Pascal
+ * refuses those on public projects. When the session can't be restored, a public project resolves
+ * as `anonymous` (its public view, on its anonymous address); nothing else falls back. An
+ * indeterminate read (offline, 5xx, 429) throws its `PascalError`, for a retryable screen.
  *
- * Concurrent rejections on this page share one outcome.
+ * The outcome is kept per tab (`Recovery`), so reloads and re-entries settle it again without a
+ * second automatic trip. Concurrent rejections on this page share one outcome.
  */
 export function rejectCredential(
   credential: StoredCredential, status: number, baseUrl = credential.issuer,
@@ -300,20 +342,15 @@ async function handleRejection(credential: StoredCredential, status: number, bas
   const { issuer, project_id: projectId, viewer_id: viewer, access } = credential
   // What the visitor was doing, read before the rejection clears the stored credential.
   const configure = credential.configure === true
-  reject(credential)
+  rememberRejection(credential)
   const descriptor = await resolveDescriptor(issuer)
   if (status === 401 && Date.parse(credential.expires_at) <= Date.now()) return renew(credential, descriptor, baseUrl)
-  if (status !== 401 || access !== 'session' || !descriptor) return showPublic(issuer, baseUrl, projectId, access, configure)
-  const readable = configure ? undefined : await readsAnonymously(baseUrl, projectId)
-  if (readable || !spendRecovery(issuer, viewer, projectId)) {
-    return showPublic(issuer, baseUrl, projectId, access, configure, readable)
-  }
-  await startAuthorize(issuer, descriptor, projectId, 'session', false, false, configure, false, true)
-  return { kind: 'opening' }
+  if (access === 'share') return rejectShare(credential)
+  return settle(issuer, baseUrl, projectId, viewer, descriptor, noteRejection(issuer, viewer, projectId, configure, status !== 401))
 }
 
 export function credentialReadSucceeded(credential: StoredCredential): void {
-  restoreRecovery(credential.issuer, credential.viewer_id, credential.project_id)
+  clearRecovery(credential.issuer, credential.viewer_id, credential.project_id)
   if (credential.renewalAttempted && Date.parse(credential.expires_at) - Date.now() > RENEW_MARGIN) {
     credential.renewalAttempted = false
     storeCredential(credential)

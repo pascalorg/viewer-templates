@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
   credentialReadSucceeded, customizeNeedsReopen, rejectCredential, ReopenRequired, resolveAccess,
 } from '../../src/pascal/access'
+import { PascalError } from '../../src/pascal/client'
 import type { StoredCredential } from '../../src/pascal/handoff'
 import { sceneBody } from '../pascal-mocks'
 
@@ -16,6 +17,8 @@ let address = new URL(origin)
 let navigations: URL[] = []
 let publicProjects = new Set<string>()
 let sceneReads: { project: string; authorization: string | null }[] = []
+/** Answers the next tokenless reads instead of the public/private rule: a status, or `offline`. */
+let tokenless: (number | 'offline')[] = []
 
 Object.assign(globalThis, {
   sessionStorage: {
@@ -43,6 +46,9 @@ Object.assign(globalThis, {
     const authorization = new Headers(init?.headers).get('authorization')
     sceneReads.push({ project, authorization })
     if (authorization) return Response.json({ error: 'unauthorized' }, { status: 401 })
+    const override = tokenless.shift()
+    if (override === 'offline') throw new TypeError('Failed to fetch')
+    if (override) return Response.json({ error: 'unavailable' }, { status: override })
     if (!publicProjects.has(project)) return Response.json({ error: 'not_found' }, { status: 404 })
     return new Response(JSON.stringify(sceneBody()), { headers: { 'content-type': 'application/json' } })
   },
@@ -63,6 +69,7 @@ test.beforeEach(() => {
   navigations = []
   publicProjects = new Set()
   sceneReads = []
+  tokenless = []
 })
 
 test('concurrent rejections of one credential share a single configure round trip', async () => {
@@ -112,9 +119,54 @@ test("a reader's session on a public project never asks Pascal for a session it 
   address = new URL(`/?project=${project}&viewer=${viewer}&access=session`, origin)
   expect(await rejectCredential(credential(project, { configure: false }), 401, issuer)).toEqual({ kind: 'anonymous' })
   expect(navigations).toEqual([])
-  expect(storage.has(recoveryKey(project))).toBe(false)
   expect(customizeNeedsReopen(project, issuer)).toBe(false)
   expect(address.search).toBe(`?project=${project}`)
+  // Recorded, unspent: the tab never asked Pascal for this session.
+  expect(JSON.parse(storage.get(recoveryKey(project))!)).toEqual({ configure: false, spent: false })
+})
+
+for (const [answer, code] of [[503, 'http'], [429, 'http'], ['offline', 'network']] as const) {
+  test(`an indeterminate public probe (${answer}) is a retryable error: no round trip, no public view`, async () => {
+    const project = `project_indeterminate_${answer}`
+    const entry = `?project=${project}&viewer=${viewer}&access=session`
+    address = new URL(`/${entry}`, origin)
+    tokenless = [answer]
+    const failure = await rejectCredential(credential(project, { configure: false }), 401, issuer).then(() => null, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(PascalError)
+    expect((failure as PascalError).code).toBe(code)
+    expect(navigations).toEqual([])
+    expect(address.search).toBe(entry)
+    expect(customizeNeedsReopen(project, issuer)).toBe(false)
+    // A retry (or reload) settles again from the record: still indeterminate, still no trip...
+    tokenless = ['offline']
+    expect(await resolveAccess(project, issuer).then(() => null, (error: unknown) => error)).toBeInstanceOf(PascalError)
+    expect(navigations).toEqual([])
+    // ...until the scene API says definitively not public.
+    tokenless = [404]
+    expect(await resolveAccess(project, issuer)).toEqual({ kind: 'opening' })
+    expect(navigations).toHaveLength(1)
+    expect(navigations[0]!.searchParams.has('scope')).toBe(false)
+  })
+}
+
+for (const status of [401, 403]) {
+  test(`a tokenless ${status} is definitively not public`, async () => {
+    const project = `project_tokenless_${status}`
+    address = new URL(`/?project=${project}&viewer=${viewer}&access=session`, origin)
+    tokenless = [status]
+    expect(await rejectCredential(credential(project, { configure: false }), 401, issuer)).toEqual({ kind: 'opening' })
+    expect(navigations).toHaveLength(1)
+  })
+}
+
+test('a spent recovery is settled again on re-entry, never with another automatic authorize', async () => {
+  const project = 'project_reentry'
+  address = new URL(`/?project=${project}&viewer=${viewer}&access=session&configure=1`, origin)
+  storage.set(recoveryKey(project), JSON.stringify({ configure: true, spent: true }))
+  const failure = await resolveAccess(project, issuer).then(() => null, (error: unknown) => error)
+  expect(failure).toBeInstanceOf(ReopenRequired)
+  expect((failure as ReopenRequired).configure).toBe(true)
+  expect(navigations).toEqual([])
 })
 
 test('a successful credentialed read gives the round trip back', async () => {
