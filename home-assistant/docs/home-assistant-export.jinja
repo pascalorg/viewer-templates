@@ -1,0 +1,24 @@
+{#- Pascal: export this Home Assistant's devices as JSON.
+    Paste into Home Assistant → Developer tools → Template, then copy the result on the right.
+    It lists every device-like entity with its area, device, kind and supported features: no
+    states, no history, no addresses or keys. -#}
+{%- set domains = ['light', 'climate', 'fan', 'humidifier', 'water_heater', 'cover', 'valve', 'lock',
+  'switch', 'siren', 'alarm_control_panel', 'media_player', 'camera', 'vacuum', 'lawn_mower',
+  'sensor', 'binary_sensor', 'remote', 'event', 'assist_satellite'] -%}
+{%- set ns = namespace(entities=[], areas=[]) -%}
+{%- for a in areas() -%}
+  {%- set ns.areas = ns.areas + [{'id': a, 'name': area_name(a), 'floor': floor_name(floor_id(a)) if floor_id(a) else none}] -%}
+{%- endfor -%}
+{%- for s in states if s.domain in domains -%}
+  {%- set ns.entities = ns.entities + [{
+    'entity_id': s.entity_id,
+    'name': s.name,
+    'domain': s.domain,
+    'device_class': s.attributes.device_class | default(none),
+    'supported_features': s.attributes.supported_features | default(0),
+    'area': area_name(s.entity_id),
+    'device': device_attr(device_id(s.entity_id), 'name_by_user') or device_attr(device_id(s.entity_id), 'name') if device_id(s.entity_id) else none,
+    'device_id': device_id(s.entity_id),
+  }] -%}
+{%- endfor -%}
+{{ {'pascal_home_assistant_export': 1, 'areas': ns.areas, 'entities': ns.entities} | to_json }}
