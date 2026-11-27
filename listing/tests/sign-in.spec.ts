@@ -263,6 +263,20 @@ test('a refused session stays refused for this load; a reload can read anonymous
   expect(exchange.exchange).toBe(0)
 })
 
+// A link that lost `access` (or was written by hand) reads anonymously instead of asking to reopen.
+test('a Pascal entry without access opens a public project and offers sign-in on a private one', async ({ page }) => {
+  let publicProject = true
+  await mockPascal(page, () => publicProject ? { body: sceneBody() } : { status: 404, body: errorBody('not_found') })
+  await registry(page)
+  await authorize(page)
+  await page.goto(`/?project=${project}&viewer=${viewer}`)
+  await expect(page.locator('main[data-scene-ready="true"]')).toBeVisible({ timeout: 60_000 })
+  publicProject = false
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Project not found' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in with Pascal' })).toBeVisible()
+})
+
 test('sign-in preserves an anonymous Pascal entry as the current return page', async ({ page, baseURL }) => {
   const path = `/?project=${project}&viewer=${viewer}&access=anonymous&embed=1`
   await mockPascal(page, (n) => n === 1 ? { status: 404, body: errorBody('not_found') } : { body: sceneBody() })
