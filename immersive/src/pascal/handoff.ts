@@ -227,9 +227,12 @@ export function callbackProject(issuer: string): string | null {
 export function detectEntry(): Entry | null {
   const query = new URLSearchParams(location.search)
   if (!query.has('viewer') && !query.has('access')) return null
-  const access = query.get('access')
+  // A link without `access` (written by hand, or one that lost it on the way) reads anonymously: a
+  // public project opens, and a private one answers "Project not found" with its sign-in offer.
+  const access = query.has('access') ? query.get('access') : 'anonymous'
   if (
-    !['project', 'viewer', 'access'].every((key) => query.getAll(key).length === 1 && query.get(key)) ||
+    !['project', 'viewer'].every((key) => query.getAll(key).length === 1 && query.get(key)) ||
+    query.getAll('access').length > 1 ||
     !['session', 'share', 'anonymous'].includes(access || '')
   ) throw new ReopenRequired(access === 'share' ? 'share' : 'session')
   // `configure=1` (enter Customize now) comes only with session access; `configure=available` (the

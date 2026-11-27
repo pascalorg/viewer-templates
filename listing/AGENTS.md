@@ -136,7 +136,8 @@ then open it from Pascal or create a share link pinned to this viewer.
 
 The helper resolves `GET /api/viewers/resolve?origin=<location.origin>` once per page to discover
 the viewer ID and exact callback. No viewer ID or per-project deployment configuration is needed.
-Pascal supplies `project`, `viewer`, and `access=session|share|anonymous` in its entry URL.
+Pascal supplies `project`, `viewer`, and `access=session|share|anonymous` in its entry URL. An
+entry without `access` (a hand-written or truncated link) counts as `access=anonymous`.
 The helper captures and immediately scrubs callback `code`, `error`, `error_description`,
 `state`, and `iss` before loading the app or rendering React, validates the saved transaction
 (including its ten-minute maximum age), then exchanges the code using S256 PKCE and `credentials: 'omit'`. No Pascal cookies are sent by API reads.
