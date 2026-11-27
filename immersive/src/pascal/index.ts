@@ -1,4 +1,5 @@
 export * from './client'
 export * from './contract'
 export * from './graph'
-export { canSignIn, signIn, SignInUnavailable } from './access'
+export * from './settings'
+export { canSignIn, customizeHinted, customizeNeedsReopen, customizeRefused, customizeRequested, enterCustomize, signIn, SignInUnavailable } from './access'

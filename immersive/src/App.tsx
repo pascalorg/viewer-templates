@@ -21,7 +21,7 @@ function Project({ projectId }: { projectId: string }) {
     case 'opening': return <LoadingScreen opening />
     case 'downloading': return <LoadingScreen progress={state.progress} projectName={state.scene.project.name} />
     case 'refused': return <RefusedScreen baseUrl={PASCAL_BASE_URL} projectId={projectId} />
-    case 'reopen': return <NeedsAccessScreen access={state.access} baseUrl={PASCAL_BASE_URL} projectId={projectId} />
+    case 'reopen': return <NeedsAccessScreen access={state.access} baseUrl={PASCAL_BASE_URL} configure={state.configure} projectId={projectId} />
     case 'error': return <ErrorScreen error={state.error} onRetry={reload} baseUrl={PASCAL_BASE_URL} projectId={projectId} anonymous={state.anonymous} />
     case 'no-file': return <NoFileScreen scene={state.scene} onRetry={reload} />
     case 'live':
@@ -29,7 +29,7 @@ function Project({ projectId }: { projectId: string }) {
       // A late plugin bumps runtimeRevision without remounting; the viewer rebuilds what it draws.
       const glbUrl = state.kind === 'baked' ? state.url : null
       return <ProjectViewer key={`${state.scene.revision.modelId}:${state.scene.revision.version}:${glbUrl}`}
-        scene={state.scene} glbUrl={glbUrl} runtimeRevision={state.runtimeRevision} />
+        scene={state.scene} glbUrl={glbUrl} runtimeRevision={state.runtimeRevision} token={state.token} />
     }
   }
 }

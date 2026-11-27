@@ -754,3 +754,103 @@ main[data-scene-ready="true"] .ui-enter-up {
   main[data-scene-ready="true"] .ui-enter-right,
   main[data-scene-ready="true"] .ui-enter-up { animation: none; }
 }
+
+/* ── Customize panel (src/pascal-react/settings-panel.css), a project's managers only ──
+   Collapsed, a pill in the bottom-left corner beside the compass, on the side the panel opens;
+   open, a panel docked on the left that slides in from the left, so the Explore panel and its
+   rooms on the right stay in view while customising. Phones keep the pill at the
+   top left (their bottom bar owns the bottom) and the shared sheet across the bottom. Colours follow the viewer's light and dark themes; solid card colours, no
+   blur over the canvas. The shared stylesheet places it on the right; the overrides below move it
+   without touching that shared file (`:root` outranks it, as it loads later). */
+:root {
+  --pascal-settings-bg: color-mix(in srgb, var(--card) 96%, transparent);
+  --pascal-settings-text: var(--card-foreground);
+  --pascal-settings-muted: var(--muted-foreground);
+  --pascal-settings-border: var(--border);
+  --pascal-settings-accent: var(--primary);
+  --pascal-settings-accent-text: var(--primary-foreground);
+  --pascal-settings-field: color-mix(in srgb, var(--foreground) 5%, transparent);
+  --pascal-settings-dot: #f5a524;
+  --pascal-settings-radius: 20px;
+  --pascal-settings-font: var(--font-sans);
+  --pascal-settings-font-size: 13px;
+  --pascal-settings-width: 360px;
+  /* Over the chrome (z-20) and the compass (z-30), under sheets (z-50) and modals. */
+  --pascal-settings-z: 40;
+  --pascal-settings-top: 16px;
+  --pascal-settings-right: 16px;
+  --pascal-settings-bottom: 96px;
+}
+/* Phones: the panel is a sheet over the bottom bar. */
+@media (max-width: 560px) {
+  :root { --pascal-settings-bottom: calc(8px + env(safe-area-inset-bottom)); }
+}
+:root .pascal-settings-tab-wrap {
+  top: 12px;
+  right: auto;
+  left: 12px;
+  transform: none;
+}
+@media (min-width: 768px) {
+  /* Beside the compass (12px in, 32px wide), centred on it; the left side stays clear in 2D and split view. */
+  :root .pascal-settings-tab-wrap { top: auto; left: 56px; bottom: 10px; }
+}
+@media (min-width: 561px) {
+  :root .pascal-settings-panel {
+    right: auto;
+    left: 16px;
+    animation-name: immersive-settings-in-left;
+  }
+  /* The collapse arrow points the way the panel goes: left. */
+  :root .pascal-settings-header .pascal-settings-icon-button svg { transform: scaleX(-1); }
+}
+@keyframes immersive-settings-in-left {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Customize → Guided tour: the route, a room per line with its switch and move buttons. */
+.immersive-tour-route { display: flex; flex-direction: column; gap: 8px; }
+.immersive-tour-floor-name {
+  margin: 4px 0 2px;
+  color: var(--pascal-settings-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.immersive-tour-rooms {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--pascal-settings-border);
+  border-radius: 12px;
+  overflow: hidden;
+  counter-reset: tour-room;
+}
+.immersive-tour-room {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 10px;
+  counter-increment: tour-room;
+}
+.immersive-tour-room + .immersive-tour-room { border-top: 1px solid var(--pascal-settings-border); }
+.immersive-tour-room-toggle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.immersive-tour-room-toggle input { accent-color: var(--pascal-settings-accent); margin: 0; }
+.immersive-tour-dot { width: 8px; height: 8px; flex: none; border-radius: 999px; }
+.immersive-tour-room-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.immersive-tour-room[data-skipped] .immersive-tour-room-label {
+  color: var(--pascal-settings-muted);
+  text-decoration: line-through;
+}
+.immersive-tour-room[data-skipped] .immersive-tour-dot { opacity: 0.35; }
+.immersive-tour-room-moves { display: flex; flex: none; gap: 2px; }
+.immersive-tour-room-moves .pascal-settings-icon-button { width: 28px; height: 28px; }

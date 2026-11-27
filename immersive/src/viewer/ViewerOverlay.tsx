@@ -2,6 +2,7 @@ import { useLocale, usePascalI18n } from '@pascal-app/core'
 import { useViewer, type WalkthroughMovement } from '@pascal-app/viewer'
 import type { ViewerSource, ViewerStageMode } from '@pascal-app/viewer/ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { arrangeTour, type SavedTour } from '../settings/opening'
 import { tourFloors } from '../tour/stops'
 import { TourIntro, TourTitleCard } from '../tour/TourTitleCard'
 import { ThemeSwitch, TourControls, TourPanel } from '../tour/TourUi'
@@ -51,6 +52,8 @@ export function ViewerOverlay({
   hideBottomBar,
   embed,
   arAutoOpen = false,
+  autostartTour = false,
+  tourSettings,
   stageMode,
   hasFloorplan,
   onStageModeChange,
@@ -69,6 +72,10 @@ export function ViewerOverlay({
   embed: boolean
   /** Opened from a `?ar=1` QR scan: open the AR card automatically once the scene is ready. */
   arAutoOpen?: boolean
+  /** Viewer settings asked for the guided tour on arrival and the scene is on screen: start it once. */
+  autostartTour?: boolean
+  /** Viewer settings' tour route (saved, or a manager's draft): room order and skipped rooms. */
+  tourSettings?: SavedTour
   stageMode: ViewerStageMode
   hasFloorplan: boolean
   onStageModeChange: (mode: ViewerStageMode) => void
@@ -91,7 +98,8 @@ export function ViewerOverlay({
 
   const i18n = usePascalI18n()
   const locale = useLocale()
-  const floors = useMemo(() => tourFloors(source.nodes, i18n, locale), [source.nodes, i18n, locale])
+  const floors = useMemo(() => arrangeTour(tourFloors(source.nodes, i18n, locale), tourSettings),
+    [source.nodes, i18n, locale, tourSettings])
   const stops = useMemo(() => floors.flatMap((floor) => floor.stops), [floors])
   const tour = useGuidedTour(source, stops)
   const levels = useSceneLevels(source)
@@ -145,6 +153,13 @@ export function ViewerOverlay({
     useMeasureStore.getState().exit()
     tour.start()
   }, [dismissOnboarding, tour])
+
+  const autostartedRef = useRef(false)
+  useEffect(() => {
+    if (!autostartTour || autostartedRef.current || stops.length === 0) return
+    autostartedRef.current = true
+    startTour()
+  }, [autostartTour, startTour, stops.length])
 
   const startVr = useCallback(() => {
     dismissOnboarding()

@@ -105,6 +105,7 @@ otherwise. To remove one, delete its entry and uninstall the package. Never impo
 | `npm run dev` | Development server. |
 | `npm run build` | Static site in `dist/`, with the Content-Security-Policy and the three.js decoders. |
 | `npm run typecheck` | TypeScript check (`scripts/typecheck.mjs`). |
+| `npm run test:unit` | Tests the pure modules (viewer settings) in Node, without a browser. |
 | `npm run check` | Checks `dist/` against the hosting limits and the package boundary (`scripts/check-build.mjs`). |
 | `npm run test:e2e` | Builds a test build, then runs the Playwright tests against a mocked API. |
 | `npm run deploy:dry` | Dry run of `pascal viewer deploy` with `@pascal-app/cli@1.1.4`; needs `VIEWER_ID`. |
@@ -142,6 +143,19 @@ CDNs. A `VITE_PASCAL_BASE_URL` or `VITE_PASCAL_ASSETS_URL` on another host is bl
 Private projects use Open from Pascal or Sign in with Pascal; see
 [listing's AGENTS.md](../listing/AGENTS.md#open-from-pascal). The build is a static site, so
 Vercel, Cloudflare Pages and other static hosts work too.
+
+## Viewer settings
+
+A project's managers can choose how this viewer opens their project, and every later visitor
+gets it. A manager sees a **Customize** tab in the bottom-left corner (or opens it from Pascal's Share
+popover). Its panel edits the guided tour's route (reorder the rooms on each floor, skip rooms,
+start the tour on arrival) and the opening camera, time of day and walls, then **Save**.
+A project with nothing saved tours its rooms in the viewer's own order. Settings are saved per project and viewer and are
+readable by anyone who can read the project, so never put secrets in them. A camera in the link
+(`?camera=`) still wins over the saved one. [AGENTS.md](AGENTS.md#viewer-settings) has the details.
+
+To try it locally, register `http://localhost:<port>/` as an origin of one of your viewers in
+Pascal (Settings → Viewers) and open the project from Pascal in that viewer.
 
 ## Sign in with Pascal
 

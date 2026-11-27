@@ -37,9 +37,14 @@ import {
 } from '@pascal-app/viewer/ui'
 import { createContext, type ReactNode, Suspense, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { Object3D } from 'three'
-import { viewerFlagsFromLocation } from '../config'
+import { PASCAL_BASE_URL, viewerFlagsFromLocation } from '../config'
 import type { SceneResponse } from '../pascal'
+import { SettingsPanel, useViewerSettings } from '../pascal-react'
 import { pluginInstallStateOf, publishedSceneSetup } from '../runtime/plugins'
+import { DEFAULT_SETTINGS, parseImmersiveSettings } from '../settings/opening'
+import { OpeningSettings } from '../settings/OpeningSettings'
+import { TourSettings } from '../settings/TourSettings'
+import { applyOpeningLook, CameraPoseBridge } from '../settings/viewer-actions'
 import { useTourLook } from '../tour/look'
 import { TourCamera } from '../tour/TourCamera'
 import { TourEdgePrewarm, TourNoir } from '../tour/TourNoir'
@@ -180,8 +185,10 @@ function GlbReadySignal({ onReady }: { onReady: () => void }) {
   return null
 }
 
-export function ProjectViewer({ scene, glbUrl, runtimeRevision }: {
+export function ProjectViewer({ scene, glbUrl, runtimeRevision, token }: {
   scene: SceneResponse
+  /** The credential the scene was read with: a configure one saves viewer settings. */
+  token?: string
   /** Blob URL of the downloaded bake, or null to rebuild the graph live. */
   glbUrl: string | null
   /** Bumped when a plugin arrives after the loading deadline: rebuild what it draws. */
@@ -228,10 +235,20 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision }: {
     () => Object.values(floorplanScene.nodes).some((node) => node.type === 'level'),
     [floorplanScene],
   )
+  // Viewer settings: the saved opening and tour options, a manager's draft in Customize mode.
+  const settings = useViewerSettings({
+    settings: scene.settings, token, baseUrl: PASCAL_BASE_URL, projectId: project.id,
+    parse: parseImmersiveSettings, defaults: DEFAULT_SETTINGS,
+  })
+  // The page opens on the settings it was read with; a manager's later changes show as they are
+  // chosen in the panel and reach visitors once saved.
+  const [arrival] = useState(() => settings.value)
+  // A camera in the link (`?camera=`) wins over the saved one.
   const openingCamera = useMemo(() => {
     const parsed = parseOpeningCamera(flags.camera)
-    return parsed === 'saved' ? savedSceneCamera(floorplanScene.nodes) : parsed
-  }, [flags.camera, floorplanScene])
+    if (parsed === 'saved') return savedSceneCamera(floorplanScene.nodes)
+    return parsed ?? arrival.opening?.camera ?? null
+  }, [flags.camera, floorplanScene, arrival])
   const [openingCameraApplied, setOpeningCameraApplied] = useState(false)
   const markOpeningCameraApplied = useCallback(() => setOpeningCameraApplied(true), [])
   const walkthroughMode = useViewer((s) => s.walkthroughMode)
@@ -283,6 +300,11 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision }: {
       useViewer.getState().setProjectId(null)
     }
   }, [project.id, projectName])
+
+  // The saved time of day and walls, once on arrival; the visitor's own choices after.
+  useEffect(() => {
+    applyOpeningLook(arrival.opening, { glbActive: !!glbUrl })
+  }, [arrival, glbUrl])
 
   // Plugins are already registered (`useProjectScene` waits for them), so the live graph can
   // mount now; a late plugin bumps `runtimeRevision` and the graph mounts again to draw it.
@@ -348,6 +370,9 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision }: {
     loading || (!presentedScene && stageMode !== '2d' && (waitingFor3D || waitingForOpeningCamera))
   const hideHeader = flags.hideHeader
   const tourActive = useTourLook((state) => state.active)
+  // What the screen shows, on `<main>` for tests and embedders: viewer settings set these on arrival.
+  const timeOfDay = useViewer((s) => (s.skyLive || s.timeOfDayMinutes !== null ? 'custom' : s.timeOfDay))
+  const wallMode = useViewer((s) => s.wallMode)
   const measureActive = useMeasureStore((state) => state.active)
   const measureAllowed = !walkthroughMode && !tourActive && !vrActive && !arActive
 
@@ -355,11 +380,17 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision }: {
     if (!measureAllowed) useMeasureStore.getState().exit()
   }, [measureAllowed])
 
+  // Customize steps aside while the tour, a walkthrough, VR or AR owns the screen.
+  const showCustomize = !showSceneLoader && !tourActive && !walkthroughMode && !vrActive && !arActive
+  // A saved "start the tour on arrival", once the scene is on screen; never in embeds, VR or AR.
+  const autostartTour = arrival.tour?.autostart === true && !flags.embed && !showSceneLoader && !vrActive && !arActive
+
   return (
     <main className="relative h-screen w-full" data-guided-tour-noir={tourActive ? 'on' : undefined}
       data-measure-active={measureActive ? 'true' : undefined}
-      data-scene-ready={!showSceneLoader} data-source={glbUrl ? 'baked' : 'live'} data-stage-mode={stageMode}
-      data-state={showSceneLoader ? 'loading' : 'ready'}>
+      data-scene-ready={!showSceneLoader} data-source={glbUrl ? 'baked' : 'live'}
+      data-stage-mode={stageMode} data-state={showSceneLoader ? 'loading' : 'ready'} data-time-of-day={timeOfDay}
+      data-wall-mode={wallMode}>
       {showSceneLoader && <BrandedLoader fixed label="Preparing 3D scene" projectName={projectName} />}
 
       {!loading && (
@@ -367,7 +398,9 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision }: {
           {/* Embed: no owner line and no guest CTA; chrome lives in `src/viewer/chrome/`. */}
           <ViewerOverlay
             arAutoOpen={flags.ar}
+            autostartTour={autostartTour}
             embed={flags.embed}
+            tourSettings={settings.value.tour}
             glbActive={!!glbUrl}
             glbHasGuides={glbReference.some((n) => n.type === 'guide')}
             glbHasScans={glbReference.some((n) => n.type === 'scan')}
@@ -408,6 +441,7 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision }: {
                 >
                   <SceneEnvironment />
                   {!vrActive && <ViewerCameraControls glbActive={!!glbUrl} holdOpening={openingCamera !== null} />}
+                  {!vrActive && <CameraPoseBridge />}
                   {!vrActive && openingCamera && (
                     <ViewerOpeningCamera
                       onApplied={markOpeningCameraApplied}
@@ -499,6 +533,12 @@ export function ProjectViewer({ scene, glbUrl, runtimeRevision }: {
           )}
           {measureActive && measureAllowed && stageMode !== '3d' && <PlanMeasure source={viewerSource} />}
           {showWalkMiniMap && <WalkMiniMap source={viewerSource} />}
+          {showCustomize && (
+            <SettingsPanel description={`How visitors tour and first see ${projectName?.trim() || 'this project'} in this viewer.`} settings={settings}>
+              <TourSettings settings={settings} source={viewerSource} />
+              <OpeningSettings glbActive={!!glbUrl} settings={settings} />
+            </SettingsPanel>
+          )}
         </>
       )}
     </main>

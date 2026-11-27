@@ -50,6 +50,7 @@
     "preview": "vite preview",
     "typecheck": "node scripts/typecheck.mjs",
     "check": "node scripts/check-build.mjs",
+    "test:unit": "playwright test -c playwright.unit.config.ts",
     "test:e2e": "npm run build -- --mode runtime-test && playwright test",
     "deploy:dry": "npx @pascal-app/cli@1.1.4 viewer deploy dist --viewer $VIEWER_ID --dry-run"
   }

@@ -7,6 +7,8 @@ const ci = !!process.env.CI
 /** Serves the production-mode test build, including harness entries (`test:e2e` builds first). */
 export default defineConfig({
   testDir: 'tests',
+  // Pure-module tests run without a browser: `npm run test:unit`.
+  testIgnore: ['unit/**'],
   // SwiftShader competes for the runner's CPUs across every open scene.
   workers: ci ? 1 : undefined,
   // Let the existing 60s scene-readiness assertions finish on a software renderer.

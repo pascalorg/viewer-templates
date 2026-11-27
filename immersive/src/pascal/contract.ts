@@ -55,6 +55,25 @@ export const BakeSchema = z.object({
 })
 export type Bake = z.infer<typeof BakeSchema>
 
+/**
+ * How one viewer presents one project, saved by the project's managers (viewer settings).
+ * `data` is the template's own JSON object, null until the first save (`revision` 0). Anyone who
+ * can read the project through this viewer reads it: never a place for secrets.
+ */
+export const ViewerSettingsSchema = z.object({
+  viewerId: z.string(),
+  revision: z.int().check(z.gte(0)),
+  data: z.nullable(z.record(z.string(), z.unknown())),
+  /** True only when the read carried a live configure credential: show the settings controls. */
+  canConfigure: z.boolean(),
+  /**
+   * True when the reader manages the project and may enter Customize (`enterCustomize`): a session
+   * credential whose user can manage it, and whenever `canConfigure` is. Absent on older servers.
+   */
+  configureAvailable: z.catch(z.optional(z.boolean()), undefined),
+})
+export type ViewerSettings = z.infer<typeof ViewerSettingsSchema>
+
 export const SceneResponseSchema = z.object({
   contractVersion: z.literal(1),
   project: z.object({
@@ -73,6 +92,11 @@ export const SceneResponseSchema = z.object({
   graph: SceneGraphSchema,
   libraryMaterials: z.array(z.unknown()),
   bake: BakeSchema,
+  /**
+   * This viewer's settings for the project; null when Pascal could not tell which viewer is
+   * reading. Older servers omit it and a malformed document never fails the read: both are null.
+   */
+  settings: z.catch(z.optional(z.nullable(ViewerSettingsSchema)), null),
 })
 export type SceneResponse = z.infer<typeof SceneResponseSchema>
 
